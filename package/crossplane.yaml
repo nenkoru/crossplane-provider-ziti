@@ -1,13 +1,20 @@
-apiVersion: meta.pkg.crossplane.io/v1alpha1
-kind: Provider
+apiVersion: meta.pkg.crossplane.io/v1
+kind: Controller
 metadata:
-  name: provider-template
+  name: provider-ziti
   annotations:
-    meta.crossplane.io/maintainer: Crossplane Maintainers <info@crossplane.io>
-    meta.crossplane.io/source: github.com/crossplane/provider-template
-    meta.crossplane.io/license: Apache-2.0
-    meta.crossplane.io/description: |
-      A template that can be used to create Crossplane providers.
+    meta.crossplane.io/maintainer: Crossplane contributors
+    meta.crossplane.io/url: "https://github.com/crossplane/provider-ziti"
+    meta.crossplane.io/description: "|
+      Provider Ziti is a Crossplane Provider for managing OpenZiti resources
+      including services, edge routers, policies, configurations, identities,
+      and posture checks."
+    meta.crossplane.io/source: "github.com/crossplane/provider-ziti"
+    meta.crossplane.io/license: "Apache-2.0"
+    meta.crossplane.io/readme: "provider-ziti is a Crossplane Provider that manages OpenZiti resources."
+    friendly-name: "Crossplane Provider for OpenZiti"
+    keywords: "ziti,openziti,networking,service-mesh"
+    categories: "Networking"
 spec:
-  capabilities:
-    - safe-start
+  image: "xpkg.upbound.io/crossplane/provider-ziti:v0.1.0"
+  version: "v0.1.0"
