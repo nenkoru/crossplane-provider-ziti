@@ -20,6 +20,7 @@ import (
 	"context"
 	"encoding/json"
 	"strings"
+	"time"
 
 	"github.com/crossplane/provider-ziti/internal/client"
 )
@@ -159,4 +160,20 @@ func ConfigData(parameters any) (map[string]any, error) {
 	delete(data, "name")
 	delete(data, "tags")
 	return data, nil
+}
+
+// ControllerTime returns the time on the clock of the Ziti controller, going
+// by its latest response. A controller that has not told the time yet is
+// taken to agree with the local clock, and the second value is false.
+func ControllerTime(api *client.Client) (time.Time, bool) {
+	ahead, ok := api.ClockAhead()
+	return time.Now().Add(ahead), ok
+}
+
+// Expired returns true if the supplied time has passed on the clock of the
+// Ziti controller, by more than that clock can be misjudged. Nothing has
+// expired as long as the controller has not told the time.
+func Expired(api *client.Client, at time.Time) bool {
+	now, ok := ControllerTime(api)
+	return ok && at.Before(now.Add(-clockTolerance))
 }
