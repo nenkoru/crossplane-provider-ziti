@@ -1,0 +1,36 @@
+# Identities that enroll with a one-time token. The token (a JWT) is written
+# to the connection secret under the key enrollmentToken:
+#
+#   kubectl get secret web-client-enrollment -o jsonpath='{.data.enrollmentToken}' | base64 -d > web-client.jwt
+#   ziti edge enroll web-client.jwt
+apiVersion: ziti.crossplane.io/v1alpha1
+kind: Identity
+metadata:
+  name: web-client
+spec:
+  providerConfigRef:
+    kind: ProviderConfig
+    name: default
+  writeConnectionSecretToRef:
+    name: web-client-enrollment
+  forProvider:
+    name: web-client
+    roleAttributes:
+      - web-clients
+    tags:
+      team: platform
+---
+apiVersion: ziti.crossplane.io/v1alpha1
+kind: Identity
+metadata:
+  name: web-server
+spec:
+  providerConfigRef:
+    kind: ProviderConfig
+    name: default
+  writeConnectionSecretToRef:
+    name: web-server-enrollment
+  forProvider:
+    name: web-server
+    roleAttributes:
+      - web-servers

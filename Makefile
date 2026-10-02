@@ -1,6 +1,6 @@
 # ====================================================================================
 # Setup Project
-PROJECT_NAME := provider-template
+PROJECT_NAME := provider-ziti
 PROJECT_REPO := github.com/crossplane/$(PROJECT_NAME)
 
 PLATFORMS ?= linux_amd64 linux_arm64
@@ -31,7 +31,7 @@ GOLANGCILINT_VERSION = 2.12.2
 # ====================================================================================
 # Setup Images
 
-IMAGES = provider-template
+IMAGES = provider-ziti
 -include build/makelib/imagelight.mk
 
 # ====================================================================================
@@ -41,12 +41,18 @@ XPKG_REG_ORGS ?= xpkg.upbound.io/crossplane
 # NOTE(hasheddan): skip promoting on xpkg.upbound.io as channel tags are
 # inferred.
 XPKG_REG_ORGS_NO_PROMOTE ?= xpkg.upbound.io/crossplane
-XPKGS = provider-template
+XPKGS = provider-ziti
 -include build/makelib/xpkg.mk
 
 # NOTE(hasheddan): we force image building to happen prior to xpkg build so that
 # we ensure image is present in daemon.
-xpkg.build.provider-template: do.build.images
+xpkg.build.provider-ziti: do.build.images
+
+# The controller integration test (internal/controller) runs against a real
+# Kubernetes API server. setup-envtest downloads and caches its binaries.
+ENVTEST_VERSION ?= release-0.23
+ENVTEST_K8S_VERSION ?= 1.35.x
+go.test.unit: export KUBEBUILDER_ASSETS = $(shell $(GO) run sigs.k8s.io/controller-runtime/tools/setup-envtest@$(ENVTEST_VERSION) use $(ENVTEST_K8S_VERSION) -p path)
 
 fallthrough: submodules
 	@echo Initial setup complete. Running make again . . .
@@ -60,6 +66,20 @@ test-integration: $(KIND) $(KUBECTL) $(CROSSPLANE_CLI) $(HELM3)
 	@$(INFO) running integration tests using kind $(KIND_VERSION)
 	@KIND_NODE_IMAGE_TAG=${KIND_NODE_IMAGE_TAG} $(ROOT_DIR)/cluster/local/integration_tests.sh || $(FAIL)
 	@$(OK) integration tests passed
+
+# Run the end-to-end test: the provider out-of-cluster against a kind cluster
+# and an OpenZiti controller started from ziti-docker-compose.yml.
+e2e.ziti:
+	@$(INFO) running end-to-end tests against OpenZiti
+	@$(ROOT_DIR)/test/e2e/e2e.sh all || $(FAIL)
+	@$(OK) end-to-end tests passed
+
+# Until ci.yml gets a job of its own for the end-to-end test, the unit-tests
+# job runs it once the unit tests have passed.
+ifeq ($(GITHUB_JOB),unit-tests)
+test.run: e2e.ziti
+e2e.ziti: go.test.unit
+endif
 
 # Update the submodules, such as the common build scripts.
 submodules:
@@ -95,34 +115,21 @@ dev: $(KIND) $(KUBECTL)
 	@$(INFO) Creating kind cluster
 	@$(KIND) create cluster --name=$(PROJECT_NAME)-dev
 	@$(KUBECTL) cluster-info --context kind-$(PROJECT_NAME)-dev
-	@$(INFO) Installing Provider Template CRDs
+	@$(INFO) Installing Provider Ziti CRDs
 	@$(KUBECTL) apply -R -f package/crds
-	@$(INFO) Starting Provider Template controllers
+	@$(INFO) Starting Provider Ziti controllers
 	@$(GO) run cmd/provider/main.go --debug
 
 dev-clean: $(KIND) $(KUBECTL)
 	@$(INFO) Deleting kind cluster
 	@$(KIND) delete cluster --name=$(PROJECT_NAME)-dev
 
-.PHONY: submodules fallthrough test-integration run dev dev-clean
+.PHONY: submodules fallthrough test-integration e2e.ziti run dev dev-clean
 
 # ====================================================================================
 # Special Targets
 
-# Install gomplate
-GOMPLATE_VERSION := 3.10.0
-GOMPLATE := $(TOOLS_HOST_DIR)/gomplate-$(GOMPLATE_VERSION)
-
-$(GOMPLATE):
-	@$(INFO) installing gomplate $(SAFEHOSTPLATFORM)
-	@mkdir -p $(TOOLS_HOST_DIR)
-	@curl -fsSLo $(GOMPLATE) https://github.com/hairyhenderson/gomplate/releases/download/v$(GOMPLATE_VERSION)/gomplate_$(SAFEHOSTPLATFORM) || $(FAIL)
-	@chmod +x $(GOMPLATE)
-	@$(OK) installing gomplate $(SAFEHOSTPLATFORM)
-
-export GOMPLATE
-
-# This target prepares repo for your provider by replacing all "template"
+# This target prepares repo for your provider by replacing all "openziti"
 # occurrences with your provider name.
 # This target can only be run once, if you want to rerun for some reason,
 # consider stashing/resetting your git state.

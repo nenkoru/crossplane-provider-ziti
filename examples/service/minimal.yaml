@@ -1,0 +1,33 @@
+# Minimal Service Example
+# Use this for a simple service with just a host config
+
+apiVersion: ziti.crossplane.io/v1alpha1
+kind: ConfigHostV1
+metadata:
+  name: minimal-host
+spec:
+  providerConfigRef:
+    kind: ProviderConfig
+    name: default
+  forProvider:
+    name: minimal-host
+    address: my-service.local
+    port: 8080
+    protocol: tcp
+  managementPolicies:
+    - "*"
+---
+apiVersion: ziti.crossplane.io/v1alpha1
+kind: Service
+metadata:
+  name: minimal-service
+spec:
+  providerConfigRef:
+    kind: ProviderConfig
+    name: default
+  forProvider:
+    name: minimal-service
+    configs:
+      - minimal-host
+  managementPolicies:
+    - "*"

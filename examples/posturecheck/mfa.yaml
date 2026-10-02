@@ -1,0 +1,15 @@
+apiVersion: ziti.crossplane.io/v1alpha1
+kind: PostureCheckMFA
+metadata:
+  name: mfa
+spec:
+  providerConfigRef:
+    kind: ProviderConfig
+    name: default
+  forProvider:
+    name: mfa
+    timeoutSeconds: 3600
+    promptOnWake: true
+    promptOnUnlock: true
+    roleAttributes:
+      - mfa

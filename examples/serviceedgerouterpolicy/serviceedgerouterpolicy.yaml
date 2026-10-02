@@ -1,0 +1,16 @@
+# Which services are available on which edge routers.
+apiVersion: ziti.crossplane.io/v1alpha1
+kind: ServiceEdgeRouterPolicy
+metadata:
+  name: web-services-public-routers
+spec:
+  providerConfigRef:
+    kind: ProviderConfig
+    name: default
+  forProvider:
+    name: web-services-public-routers
+    semantic: AnyOf
+    serviceRoles:
+      - "#role:web"
+    edgeRouterRoles:
+      - "#public"

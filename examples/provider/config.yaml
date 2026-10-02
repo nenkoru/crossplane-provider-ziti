@@ -1,38 +1,32 @@
-apiVersion: v1
-kind: Namespace
-metadata:
-  name: default
----
+# Credentials of a Ziti administrator. The Secret may hold the keys host,
+# username, password, cert, key and ca.
 apiVersion: v1
 kind: Secret
 metadata:
+  name: ziti-credentials
   namespace: default
-  name: example-provider-secret
 type: Opaque
-data:
-  credentials: QkFTRTY0RU5DT0RFRF9QUk9WSURFUl9DUkVEUwo=
+stringData:
+  username: admin
+  password: change-me
 ---
-apiVersion: template.crossplane.io/v1alpha1
+apiVersion: ziti.crossplane.io/v1alpha1
 kind: ProviderConfig
 metadata:
-  name: example
+  name: default
   namespace: default
 spec:
+  # URL of the Ziti controller. /edge/management/v1 is appended if missing.
+  host: https://controller.example.com:1280
   credentials:
     source: Secret
     secretRef:
-      namespace: default
-      name: example-provider-secret
-      key: credentials
----
-apiVersion: template.crossplane.io/v1alpha1
-kind: ClusterProviderConfig
-metadata:
-  name: example
-spec:
-  credentials:
-    source: Secret
-    secretRef:
-      namespace: default
-      name: example-provider-secret
-      key: credentials
+      name: ziti-credentials
+  # The controller certificate is verified against the system roots by
+  # default. Set ca for a controller with a private PKI:
+  # ca: |
+  #   -----BEGIN CERTIFICATE-----
+  #   ...
+  #   -----END CERTIFICATE-----
+  # Or, for testing only, skip verification:
+  # insecureSkipTLSVerify: true

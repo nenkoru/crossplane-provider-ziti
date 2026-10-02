@@ -7,38 +7,36 @@ YLW='\033[0;33m'
 GRN='\033[0;32m'
 RED='\033[0;31m'
 NOC='\033[0m' # No Color
-echo_info(){
-    printf "\n${BLU}%s${NOC}" "$1"
+echo_info() {
+	printf "\n${BLU}%s${NOC}" "$1"
 }
-echo_step(){
-    printf "\n${BLU}>>>>>>> %s${NOC}\n" "$1"
+echo_step() {
+	printf "\n${BLU}>>>>>>> %s${NOC}\n" "$1"
 }
-echo_sub_step(){
-    printf "\n${BLU}>>> %s${NOC}\n" "$1"
-}
-
-echo_step_completed(){
-    printf "${GRN} [✔]${NOC}"
+echo_sub_step() {
+	printf "\n${BLU}>>> %s${NOC}\n" "$1"
 }
 
-echo_success(){
-    printf "\n${GRN}%s${NOC}\n" "$1"
-}
-echo_warn(){
-    printf "\n${YLW}%s${NOC}" "$1"
-}
-echo_error(){
-    printf "\n${RED}%s${NOC}" "$1"
-    exit 1
+echo_step_completed() {
+	printf "${GRN} [✔]${NOC}"
 }
 
+echo_success() {
+	printf "\n${GRN}%s${NOC}\n" "$1"
+}
+echo_warn() {
+	printf "\n${YLW}%s${NOC}" "$1"
+}
+echo_error() {
+	printf "\n${RED}%s${NOC}" "$1"
+	exit 1
+}
 
 # The name of your provider. Many provider Makefiles override this value.
-PACKAGE_NAME="provider-template"
-
+PACKAGE_NAME="provider-ziti"
 
 # ------------------------------
-projectdir="$( cd "$( dirname "${BASH_SOURCE[0]}")"/../.. && pwd )"
+projectdir="$(cd "$(dirname "${BASH_SOURCE[0]}")"/../.. && pwd)"
 
 # get the build environment variables from the special build.vars target in the main makefile
 eval $(make --no-print-directory -C ${projectdir} build.vars)
@@ -59,13 +57,13 @@ CROSSPLANE_NAMESPACE="crossplane-system"
 
 # cleanup on exit
 if [ "$skipcleanup" != true ]; then
-  function cleanup {
-    echo_step "Cleaning up..."
-    export KUBECONFIG=
-    "${KIND}" delete cluster --name="${K8S_CLUSTER}"
-  }
+	function cleanup {
+		echo_step "Cleaning up..."
+		export KUBECONFIG=
+		"${KIND}" delete cluster --name="${K8S_CLUSTER}"
+	}
 
-  trap cleanup EXIT
+	trap cleanup EXIT
 fi
 
 # setup package cache
@@ -79,7 +77,8 @@ docker tag "${BUILD_IMAGE}" "${PACKAGE_IMAGE}"
 # create kind cluster with extra mounts
 KIND_NODE_IMAGE="kindest/node:${KIND_NODE_IMAGE_TAG}"
 echo_step "creating k8s cluster using kind ${KIND_VERSION} and node image ${KIND_NODE_IMAGE}"
-KIND_CONFIG="$( cat <<EOF
+KIND_CONFIG="$(
+	cat <<EOF
 kind: Cluster
 apiVersion: kind.x-k8s.io/v1alpha4
 nodes:
@@ -99,7 +98,8 @@ echo_step "create crossplane-system namespace"
 "${KUBECTL}" create ns crossplane-system
 
 echo_step "create persistent volume and claim for mounting package-cache"
-PV_YAML="$( cat <<EOF
+PV_YAML="$(
+	cat <<EOF
 apiVersion: v1
 kind: PersistentVolume
 metadata:
@@ -118,7 +118,8 @@ EOF
 )"
 echo "${PV_YAML}" | "${KUBECTL}" create -f -
 
-PVC_YAML="$( cat <<EOF
+PVC_YAML="$(
+	cat <<EOF
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
@@ -152,7 +153,8 @@ echo_step "--- INTEGRATION TESTS ---"
 # install package
 echo_step "installing ${PROJECT_NAME} into \"${CROSSPLANE_NAMESPACE}\" namespace"
 
-INSTALL_YAML="$( cat <<EOF
+INSTALL_YAML="$(
+	cat <<EOF
 apiVersion: pkg.crossplane.io/v1
 kind: Provider
 metadata:
@@ -182,12 +184,12 @@ timeout=60
 current=0
 step=3
 while [[ $(kubectl get providerrevision.pkg.crossplane.io -o name | wc -l) != "0" ]]; do
-  echo "waiting for provider to be deleted for another $step seconds"
-  current=$current+$step
-  if ! [[ $timeout > $current ]]; then
-    echo_error "timeout of ${timeout}s has been reached"
-  fi
-  sleep $step;
+	echo "waiting for provider to be deleted for another $step seconds"
+	current=$current+$step
+	if ! [[ $timeout > $current ]]; then
+		echo_error "timeout of ${timeout}s has been reached"
+	fi
+	sleep $step
 done
 
 echo_success "Integration tests succeeded!"

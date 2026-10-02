@@ -1,0 +1,17 @@
+# An edge router. Its enrollment token (a JWT) is written to the connection
+# secret under the key enrollmentToken until the router enrolls.
+apiVersion: ziti.crossplane.io/v1alpha1
+kind: EdgeRouter
+metadata:
+  name: public-router
+spec:
+  providerConfigRef:
+    kind: ProviderConfig
+    name: default
+  writeConnectionSecretToRef:
+    name: public-router-enrollment
+  forProvider:
+    name: public-router
+    isTunnelerEnabled: false
+    roleAttributes:
+      - public

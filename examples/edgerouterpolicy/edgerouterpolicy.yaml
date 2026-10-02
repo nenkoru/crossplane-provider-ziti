@@ -1,0 +1,17 @@
+# Which identities may use which edge routers.
+apiVersion: ziti.crossplane.io/v1alpha1
+kind: EdgeRouterPolicy
+metadata:
+  name: web-clients-public-routers
+spec:
+  providerConfigRef:
+    kind: ProviderConfig
+    name: default
+  forProvider:
+    name: web-clients-public-routers
+    semantic: AnyOf
+    edgeRouterRoles:
+      - "#public"
+    identityRoles:
+      - "#web-clients"
+      - "#web-servers"

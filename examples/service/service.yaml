@@ -1,0 +1,115 @@
+apiVersion: ziti.crossplane.io/v1alpha1
+kind: ConfigHostV1
+metadata:
+  name: web-service-host
+spec:
+  providerConfigRef:
+    kind: ProviderConfig
+    name: default
+  forProvider:
+    name: web-service-host
+    address: web-service.local
+    port: 8080
+    protocol: tcp
+    # Optional: forward protocol/port/address from client
+    # forwardProtocol: true
+    # forwardPort: true
+    # forwardAddress: true
+    # Optional: allowed protocols/addresses/ports
+    # allowedProtocols:
+    #   - tcp
+    # allowedAddresses:
+    #   - 10.0.0.0/8
+    # allowedSourceAddresses:
+    #   - 10.0.0.0/8
+    # Optional: listen options
+    listenOptions:
+      bindUsingEdgeIdentity: true
+      connectTimeout: "10s"
+      cost: 100
+      maxConnections: 1000
+      precedence: "required"
+    # Optional: proxy configuration
+    # proxy:
+    #   address: proxy.example.com:8080
+    #   type: http
+    # Optional: health checks
+    # httpChecks:
+    #   - url: http://health.example.com/health
+    #     method: GET
+    #     interval: "30s"
+    #     timeout: "10s"
+    #     expectStatus: 200
+    #     expectInBody: "OK"
+    #     actions:
+    #       - trigger: fail
+    #         action: "mark unhealthy"
+    #         duration: "60s"
+    #         consecutiveEvents: 3
+    # portChecks:
+    #   - address: web-service.local:8080
+    #     interval: "15s"
+    #     timeout: "5s"
+    #     actions:
+    #       - trigger: fail
+    #         action: "mark unhealthy"
+    #         duration: "30s"
+    #         consecutiveEvents: 2
+  managementPolicies:
+    - "*"
+---
+apiVersion: ziti.crossplane.io/v1alpha1
+kind: ConfigInterceptV1
+metadata:
+  name: web-service-intercept
+spec:
+  providerConfigRef:
+    kind: ProviderConfig
+    name: default
+  forProvider:
+    name: web-service-intercept
+    addresses:
+      - web.example.com
+      - api.example.com
+    protocols:
+      - tcp
+      - udp
+    portRanges:
+      - low: 80
+        high: 80
+      - low: 443
+        high: 443
+    # Optional: dial options
+    dialOptions:
+      connectTimeoutSeconds: 30
+      identity: my-dial-identity
+    # Optional: source IP to use
+    # sourceIp: 10.0.0.1
+  managementPolicies:
+    - "*"
+---
+apiVersion: ziti.crossplane.io/v1alpha1
+kind: Service
+metadata:
+  name: web-service
+spec:
+  providerConfigRef:
+    kind: ProviderConfig
+    name: default
+  forProvider:
+    name: web-service
+    encryptionRequired: true
+    maxIdleTimeMillis: 60000
+    terminatorStrategy: smartrouting
+    # Configs are referenced by name and resolved to IDs automatically
+    configs:
+      - web-service-host
+      - web-service-intercept
+    roleAttributes:
+      - role:web
+      - role:api
+    tags:
+      env: production
+      team: platform
+  managementPolicies:
+    - "*"

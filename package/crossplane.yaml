@@ -1,13 +1,18 @@
 apiVersion: meta.pkg.crossplane.io/v1alpha1
 kind: Provider
 metadata:
-  name: provider-template
+  name: provider-ziti
   annotations:
-    meta.crossplane.io/maintainer: Crossplane Maintainers <info@crossplane.io>
-    meta.crossplane.io/source: github.com/crossplane/provider-template
+    meta.crossplane.io/maintainer: nenkoru (https://github.com/nenkoru)
+    meta.crossplane.io/source: github.com/nenkoru/crossplane-provider-ziti
     meta.crossplane.io/license: Apache-2.0
     meta.crossplane.io/description: |
-      A template that can be used to create Crossplane providers.
+      A Crossplane provider that manages OpenZiti resources: services,
+      configs, service and edge router policies, identities, edge routers,
+      posture checks and auth policies.
+    meta.crossplane.io/readme: |
+      provider-ziti manages the resources of an OpenZiti network through the
+      Edge Management API of its controller.
 spec:
   capabilities:
     - safe-start
