@@ -85,9 +85,30 @@ How to read the table:
   `IdentityUPDB` by choosing a password, `IdentityNone` not at all.
 - **Enrollment tokens.** `Identity`, `IdentityCA`, `IdentityUPDB` and
   `EdgeRouter` write their enrollment JWT to the Secret named in
-  `spec.writeConnectionSecretToRef`, under the key `enrollmentToken`. Ziti
+  `spec.writeConnectionSecretToRef`, under the key `enrollmentToken`, and
+  show when it expires in `status.atProvider.enrollmentExpiresAt`. Ziti
   stops reporting the token once it is used; the Secret keeps the last one.
-  An expired token is not renewed yet.
+- **Renewal of enrollment tokens.** A token that can no longer be used is
+  replaced, in Ziti and in the Secret, as long as the identity or edge router
+  has not enrolled: when its enrollment has expired, and when it has none
+  because the enrollment was deleted in Ziti. An enrollment that has expired
+  is refreshed, a missing one is created with the method of the kind, and an
+  edge router is enrolled anew.
+  - It never happens to an identity that has an authenticator, nor to an
+    edge router that is verified or has a certificate: these have enrolled,
+    and enrolling an edge router anew would take its certificate away and
+    disconnect it. Without that information from Ziti nothing is renewed
+    either. An identity whose authenticators were all deleted in Ziti counts
+    as not enrolled, so it gets a token again.
+  - A token is replaced only once it has expired on the clock of the
+    controller, five seconds ago or more, never while it can still be used.
+  - The new token of an identity is valid for
+    `spec.forProvider.enrollmentDuration`, which is `180m` unless set, the
+    default of Ziti; the minimum is `5m`. The first token and every token of
+    an edge router are valid for as long as the controller is configured to
+    make them.
+  - A renewal is an update: it follows `spec.managementPolicies`, and one
+    that fails is reported in the `Synced` condition and retried.
 - **Deletion.** Deleting a managed resource deletes the Ziti entity. Set
   `spec.managementPolicies` to keep it. The hosting settings an identity has
   per service are dropped first: Ziti keeps them when a service is deleted
@@ -257,7 +278,10 @@ The end-to-end test starts an OpenZiti controller from
 out-of-cluster, applies the examples and checks the result through the Ziti
 API: the entities exist as declared, follow spec changes, are restored after
 being changed in Ziti directly, are not updated without a spec change, and
-are deleted with their managed resources. It starts OpenZiti 2.0.6; set
+are deleted with their managed resources. It also lets an enrollment expire,
+deletes others and enrolls an identity and an edge router, and checks that
+the tokens are replaced and that what has enrolled is left alone. It starts
+OpenZiti 2.0.6; set
 `ZITI_VERSION` for another release. In CI the `unit-tests` job runs it after
 the unit tests, until the workflow gets a job of its own for it.
 
@@ -274,8 +298,7 @@ entities.
    now.
 2. Add the missing kinds: the remaining posture checks,
    `CertificateAuthority` and `ExternalJWTSigner`.
-3. Renew expired enrollment tokens.
-4. Package and install the provider through Crossplane in the end-to-end test,
+3. Package and install the provider through Crossplane in the end-to-end test,
    then publish a first release.
 
 ## License
