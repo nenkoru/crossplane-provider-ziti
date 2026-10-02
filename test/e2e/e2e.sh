@@ -287,6 +287,12 @@ apply_ca() {
 		kubectl apply -f -
 }
 
+# status_is <plural> <name> <field> <value> succeeds if the managed resource
+# reports that value in the field of status.atProvider.
+status_is() {
+	[ "$(kubectl get "$1.${GROUP}" "$2" -o jsonpath="{.status.atProvider.$3}")" = "$4" ]
+}
+
 # mr_gone <plural> <name> succeeds if the managed resource no longer exists.
 mr_gone() {
 	local found
@@ -605,7 +611,7 @@ test_authentication() {
 	kubectl wait --for=condition=Ready --timeout="${TIMEOUT}s" "certificateauthorities.${GROUP}/device-ca"
 	wait_ready "${AUTHENTICATION_EXAMPLES[@]}"
 
-	local ca signer policy sensor fingerprint token refusal
+	local ca signer policy sensor fingerprint token refusal enrollment published
 	ca="$(mr_id certificateauthorities device-ca)"
 	signer="$(mr_id externaljwtsigners corporate-sso)"
 	policy="$(mr_id authpolicies corporate-sso-only)"
@@ -663,7 +669,10 @@ test_authentication() {
 	step "Changes made in Ziti behind the provider's back are reverted"
 	ziti_patch cas "${ca}" '{"isOttCaEnrollmentEnabled": false, "identityRoles": ["tampered"]}'
 	entity_matches cas "${ca}" '.identityRoles == ["tampered"]' >/dev/null || fail "could not tamper with the certificate authority"
-	# A PATCH of a certificate authority also takes its external ID claim away.
+	# Which is why the provider replaces a certificate authority instead.
+	entity_matches cas "${ca}" '.externalIdClaim == null' >/dev/null ||
+		fail "a PATCH without the external ID claim of a certificate authority no longer takes the claim away"
+	ok "a PATCH of a certificate authority took its external ID claim away"
 	eventually "certificate authority is restored" entity_matches cas "${ca}" \
 		'.isOttCaEnrollmentEnabled == true and (.identityRoles | sort) == ["e2e", "sensors"] and .externalIdClaim.parserCriteria == "/" and .externalIdClaim.index == 2'
 	ziti_patch external-jwt-signers "${signer}" '{"audience": "tampered", "enabled": false}'
@@ -676,6 +685,46 @@ test_authentication() {
 	step "A setting that is taken out of the spec is removed in Ziti"
 	patch certificateauthorities device-ca '{"externalIdClaim": null}'
 	eventually "external ID claim is removed in Ziti" entity_matches cas "${ca}" '.externalIdClaim == null'
+
+	step "The owner of the certificate authority verifies it"
+	# The proof is a certificate with the verification token as its common
+	# name, signed with the key of the certificate authority. Neither openssl
+	# nor curl may print the token.
+	openssl req -new -newkey rsa:2048 -nodes -subj "/CN=${token}" \
+		-keyout "${WORK}/verify.key" -out "${WORK}/verify.csr" 2>/dev/null || fail "cannot create the proof"
+	openssl x509 -req -in "${WORK}/verify.csr" -CA "${WORK}/device-ca.crt" -CAkey "${WORK}/device-ca.key" -CAcreateserial \
+		-days 1 -out "${WORK}/verify.crt" 2>/dev/null || fail "cannot sign the proof"
+	curl -sk --fail -X POST -H "zt-session: ${ZITI_TOKEN}" -H 'Content-Type: text/plain' \
+		--data-binary "@${WORK}/verify.crt" "${ZITI_API}/cas/${ca}/verify" >/dev/null || fail "Ziti does not accept the proof"
+	eventually "certificate authority reports that it is verified" status_is certificateauthorities device-ca isVerified true
+	patch certificateauthorities device-ca '{"isAuthEnabled": true}'
+	eventually "certificate authority stays verified when it is updated" entity_matches cas "${ca}" '.isAuthEnabled == true and .isVerified == true'
+
+	step "The identity enrolls with a certificate of the certificate authority"
+	openssl req -new -newkey rsa:2048 -nodes -subj '/CN=sensor' \
+		-keyout "${WORK}/sensor.key" -out "${WORK}/sensor.csr" 2>/dev/null || fail "cannot create a client certificate request"
+	printf 'extendedKeyUsage=clientAuth\n' >"${WORK}/sensor.ext"
+	openssl x509 -req -in "${WORK}/sensor.csr" -CA "${WORK}/device-ca.crt" -CAkey "${WORK}/device-ca.key" -CAcreateserial \
+		-days 1 -extfile "${WORK}/sensor.ext" -out "${WORK}/sensor.crt" 2>/dev/null || fail "cannot sign the client certificate"
+	check_token sensor-enrollment identities "${sensor}" '.enrollment.ottca.jwt'
+	published="$(kubectl get secret sensor-enrollment -o jsonpath='{.data.enrollmentToken}')"
+	enrollment="$(ziti_get identities "${sensor}" | jq -er '.enrollment.ottca.token')" || fail "the identity has no enrollment token"
+	curl -sk --fail -X POST --cert "${WORK}/sensor.crt" --key "${WORK}/sensor.key" -H 'Content-Type: application/json' \
+		-d "{\"token\": \"${enrollment}\"}" "${ZITI_URL}/edge/client/v1/enroll/ottca" >/dev/null ||
+		fail "the identity cannot enroll with its token and its client certificate"
+	entity_matches identities "${sensor}" \
+		"([.enrollment[]?] | length) == 0 and .authenticators.cert.fingerprint == \"$(openssl x509 -in "${WORK}/sensor.crt" -noout -fingerprint -sha1 | sed -e 's/.*=//' -e 's/://g' | tr 'A-F' 'a-f')\"" >/dev/null ||
+		fail "Ziti does not know the identity by its client certificate"
+	ok "identity is enrolled in Ziti with its client certificate"
+	eventually "identity reports that it is enrolled" status_is identitycas sensor enrolled true
+	expect "identity no longer reports a pending enrollment" \
+		"$(kubectl get "identitycas.${GROUP}" sensor -o jsonpath='{.status.atProvider.enrollmentExpiresAt}')" ""
+	# The connection secret keeps the token that was used, or loses it, but
+	# never gets another one. The token itself is never printed.
+	case "$(kubectl get secret sensor-enrollment -o jsonpath='{.data.enrollmentToken}')" in
+	"" | "${published}") ok "no enrollment token is published for an identity that has enrolled" ;;
+	*) fail "secret/sensor-enrollment got a new enrollment token after the identity enrolled" ;;
+	esac
 
 	step "Nothing is updated without a spec change"
 	authentication_stamps() {
