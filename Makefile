@@ -48,6 +48,12 @@ XPKGS = provider-ziti
 # we ensure image is present in daemon.
 xpkg.build.provider-ziti: do.build.images
 
+# The controller integration test (internal/controller) runs against a real
+# Kubernetes API server. setup-envtest downloads and caches its binaries.
+ENVTEST_VERSION ?= release-0.23
+ENVTEST_K8S_VERSION ?= 1.35.x
+go.test.unit: export KUBEBUILDER_ASSETS = $(shell $(GO) run sigs.k8s.io/controller-runtime/tools/setup-envtest@$(ENVTEST_VERSION) use $(ENVTEST_K8S_VERSION) -p path)
+
 fallthrough: submodules
 	@echo Initial setup complete. Running make again . . .
 	@make
