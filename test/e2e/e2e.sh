@@ -18,7 +18,7 @@
 # put the kubeconfig of its cluster in $E2E_WORK_DIR/kubeconfig and set
 # ZITI_URL, ZITI_USER and ZITI_PWD for the test controller.
 #
-# Requires docker (with compose), kind, kubectl, go, curl and jq.
+# Requires docker (with compose), kind, kubectl, go, curl, jq and openssl.
 
 set -euo pipefail
 
@@ -62,6 +62,10 @@ EXTENDED_EXAMPLES=(
 	examples/posturecheck/os.yaml
 	examples/posturecheck/mfa.yaml
 	examples/authpolicy/authpolicy.yaml
+	examples/service/hostv2.yaml
+	examples/identity/ca.yaml
+	examples/identity/updb.yaml
+	examples/identity/none.yaml
 )
 
 export KUBECONFIG="${WORK}/kubeconfig"
@@ -95,6 +99,11 @@ ziti_get() {
 ziti_post() {
 	curl -sk --fail -X POST -H "zt-session: ${ZITI_TOKEN}" -H 'Content-Type: application/json' \
 		-d "$2" "${ZITI_API}/$1" | jq -er '.data.id'
+}
+
+# ziti_delete <collection> <id> deletes an entity behind the provider's back.
+ziti_delete() {
+	curl -sk --fail -X DELETE -H "zt-session: ${ZITI_TOKEN}" "${ZITI_API}/$1/$2" >/dev/null
 }
 
 # ziti_patch <collection> <id> <json> changes the entity behind the provider's back.
@@ -146,6 +155,12 @@ eventually() {
 # entity_matches <collection> <id> <jq filter> succeeds if the filter is true for the entity.
 entity_matches() {
 	ziti_get "$1" "$2" | jq -e "$3"
+}
+
+# sync_error_has <plural> <name> <text> succeeds if the managed resource
+# reports an error that contains the text.
+sync_error_has() {
+	kubectl get "$1.${GROUP}" "$2" -o jsonpath='{.status.conditions[?(@.type=="Synced")].message}' | grep -qF "$3"
 }
 
 # patch <plural> <name> <json merge patch of spec.forProvider> changes the spec.
@@ -221,11 +236,15 @@ expect_settled() {
 	fi
 }
 
-# redact masks tokens and passwords, so that none ends up in a build log.
+# redact masks tokens and passwords, so that none ends up in a build log:
+# JWTs, values that are labelled as a secret, credentials of an Authorization
+# header and UUIDs, which is what a Ziti API session token is.
 redact() {
 	sed -E \
 		-e 's/eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+/<redacted JWT>/g' \
-		-e 's/("?(token|zt-session|password|secret)"?[=:] ?"?)[^" ,}]+/\1<redacted>/g'
+		-e 's/("?(token|zt-session|password|secret)"?[=:] ?"?)[^" ,}]+/\1<redacted>/g' \
+		-e 's/((Bearer|Basic) +)[A-Za-z0-9._~+\/=-]+/\1<redacted>/g' \
+		-e 's/[0-9a-fA-F]{8}(-[0-9a-fA-F]{4}){3}-[0-9a-fA-F]{12}/<redacted UUID>/g'
 }
 
 apply() {
@@ -348,9 +367,10 @@ EOF
 	patch configinterceptv1s web-service-intercept '{"addresses": ["web.example.com"], "dialOptions": null}'
 	eventually "intercept config is updated in Ziti" entity_matches configs "${intercept}" \
 		'.data.addresses == ["web.example.com"] and (.data | has("dialOptions") | not)'
-	patch identities web-server '{"roleAttributes": ["web-servers", "e2e"], "tags": {"env": "e2e"}}'
+	patch identities web-server \
+		'{"roleAttributes": ["web-servers", "e2e"], "tags": {"env": "e2e"}, "defaultHostingCost": 10, "defaultHostingPrecedence": "required", "serviceHostingCosts": {"web-service": 50}, "serviceHostingPrecedences": {"web-service": "failed"}, "appData": {"site": "berlin"}}'
 	eventually "identity is updated in Ziti" entity_matches identities "${server}" \
-		'(.roleAttributes | sort) == ["e2e", "web-servers"] and .tags == {"env": "e2e"}'
+		"(.roleAttributes | sort) == [\"e2e\", \"web-servers\"] and .tags == {\"env\": \"e2e\"} and .defaultHostingCost == 10 and .defaultHostingPrecedence == \"required\" and .serviceHostingCosts == {\"${service}\": 50} and .serviceHostingPrecedences == {\"${service}\": \"failed\"} and .appData == {\"site\": \"berlin\"}"
 	patch servicepolicies web-service-dial '{"semantic": "AllOf", "identityRoles": ["#web-clients", "@web-server"], "tags": {"env": "e2e"}}'
 	eventually "service policy is updated in Ziti" entity_matches service-policies "$(mr_id servicepolicies web-service-dial)" \
 		".semantic == \"AllOf\" and (.identityRoles | sort) == ([\"#web-clients\", \"@${server}\"] | sort) and .tags == {\"env\": \"e2e\"}"
@@ -361,7 +381,10 @@ EOF
 	eventually "identity role attributes are restored" entity_matches identities "${client}" '.roleAttributes == ["web-clients"]'
 
 	step "A creation that was interrupted before the Ziti ID was saved is recovered"
-	local started left_behind
+	local started left_behind foreign
+	# Someone else holds the name of the second resource below, from well
+	# before its creation starts.
+	foreign="$(ziti_post services '{"name": "e2e-taken", "encryptionRequired": true}')" || fail "cannot create a service in Ziti"
 	started="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 	left_behind="$(ziti_post services '{"name": "e2e-interrupted", "encryptionRequired": true}')" || fail "cannot create a service in Ziti"
 	kubectl apply -f - <<EOF
@@ -387,6 +410,33 @@ EOF
 	kubectl delete --wait --timeout="${TIMEOUT}s" "services.${GROUP}/e2e-interrupted"
 	expect_gone "recovered service is gone" services e2e-interrupted
 
+	step "A creation that was interrupted while its name was taken leaves the other entity alone"
+	sleep 10
+	kubectl apply -f - <<EOF
+apiVersion: ${GROUP}/v1alpha1
+kind: Service
+metadata:
+  name: e2e-taken
+  namespace: default
+  annotations:
+    crossplane.io/external-create-pending: "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+spec:
+  providerConfigRef:
+    kind: ProviderConfig
+    name: default
+  forProvider:
+    name: e2e-taken
+    roleAttributes:
+      - e2e
+EOF
+	eventually "service reports that Ziti refuses its name" sync_error_has services e2e-taken 'ziti API error 4'
+	expect "service does not take over the entity of someone else" "$(kubectl get "services.${GROUP}" e2e-taken -o jsonpath='{.metadata.annotations.crossplane\.io/external-name}')" ""
+	kubectl delete --wait --timeout="${TIMEOUT}s" "services.${GROUP}/e2e-taken"
+	entity_matches services "${foreign}" '.name == "e2e-taken" and (.roleAttributes | length) == 0' >/dev/null ||
+		fail "the entity of someone else was changed or deleted"
+	ok "the entity of someone else is untouched"
+	ziti_delete services "${foreign}" || fail "cannot delete the service in Ziti"
+
 	step "Nothing is updated without a spec change"
 	core_stamps() {
 		stamps configs "${host}" "${intercept}"
@@ -408,6 +458,15 @@ EOF
 }
 
 test_extended() {
+	step "Creating a certificate authority in Ziti for the identity that enrolls with its certificates"
+	local ca
+	openssl req -x509 -newkey rsa:2048 -nodes -days 1 -subj '/CN=provider-ziti e2e CA' \
+		-keyout "${WORK}/ca.key" -out "${WORK}/ca.crt" 2>/dev/null || fail "cannot create a CA certificate"
+	ca="$(ziti_post cas "$(jq -n --rawfile pem "${WORK}/ca.crt" \
+		'{name: "device-ca", certPem: $pem, isAuthEnabled: true, isAutoCaEnrollmentEnabled: false, isOttCaEnrollmentEnabled: true, identityRoles: []}')")" ||
+		fail "cannot create a certificate authority in Ziti"
+	ok "certificate authority device-ca exists"
+
 	step "Creating the remaining kinds"
 	apply "${EXTENDED_EXAMPLES[@]}"
 	wait_ready "${EXTENDED_EXAMPLES[@]}"
@@ -423,6 +482,22 @@ test_extended() {
 	check_entity posturecheckmfas mfa posture-checks '.typeId == "MFA" and .timeoutSeconds == 3600 and .promptOnWake == true and .promptOnUnlock == true'
 	check_entity authpolicies certificates-and-totp auth-policies \
 		'.primary.cert.allowed == true and .primary.updb.allowed == false and .primary.extJwt.allowed == false and .secondary.requireTotp == true and .tags.team == "platform"'
+
+	local hosts sensor operator
+	hosts="$(mr_id confighostv2s web-hosts)"
+	sensor="$(mr_id identitycas sensor)"
+	operator="$(mr_id identityupdbs operator)"
+	check_entity confighostv2s web-hosts configs \
+		'.configTypeId == "host.v2" and (.data.terminators | length) == 2 and .data.terminators[0].address == "web-1.internal" and .data.terminators[0].listenOptions.precedence == "required" and .data.terminators[1].address == "web-2.internal" and .tags.team == "platform"'
+	check_entity services web-pair services "(.configs == [\"${hosts}\"]) and .roleAttributes == [\"role:web\"]"
+	check_entity identitycas sensor identities \
+		".roleAttributes == [\"sensors\"] and .enrollment.ottca.caId == \"${ca}\" and (.enrollment | has(\"ott\") | not)"
+	check_token sensor-enrollment identities "${sensor}" '.enrollment.ottca.jwt'
+	check_entity identityupdbs operator identities \
+		'.roleAttributes == ["operators"] and (.enrollment | has("updb")) and (.enrollment | has("ott") | not)'
+	check_token operator-enrollment identities "${operator}" '.enrollment.updb.jwt'
+	check_entity identitynones sso-user identities \
+		'.externalId == "sso-user@example.com" and .authPolicyId == "default" and .roleAttributes == ["web-clients"] and .appData == {"department": "engineering"} and ([.enrollment[]?] | length) == 0'
 
 	step "Updating the remaining kinds updates Ziti"
 	patch edgerouters public-router '{"cost": 10, "noTraversal": true, "isTunnelerEnabled": true, "roleAttributes": ["public", "e2e"]}'
@@ -445,8 +520,24 @@ test_extended() {
 	eventually "auth policy is updated in Ziti" entity_matches auth-policies "$(mr_id authpolicies certificates-and-totp)" \
 		'.primary.cert.allowExpiredCerts == true and .primary.updb.allowed == true and .primary.updb.minPasswordLength == 12 and .primary.updb.requireNumberChar == true and (.secondary.requireTotp // false) == false'
 
+	patch confighostv2s web-hosts '{"terminators": [{"address": "web-1.internal", "port": 8443, "protocol": "tcp"}], "tags": null}'
+	eventually "host.v2 config is updated in Ziti" entity_matches configs "${hosts}" \
+		'(.data.terminators | length) == 1 and .data.terminators[0].port == 8443 and (.tags | length) == 0'
+	patch identitycas sensor '{"roleAttributes": ["sensors", "e2e"], "defaultHostingCost": 5}'
+	eventually "CA identity is updated in Ziti" entity_matches identities "${sensor}" \
+		'(.roleAttributes | sort) == ["e2e", "sensors"] and .defaultHostingCost == 5'
+	patch identityupdbs operator '{"isAdmin": true, "tags": {"env": "e2e"}}'
+	eventually "password identity is updated in Ziti" entity_matches identities "${operator}" \
+		'.isAdmin == true and .tags == {"env": "e2e"}'
+	patch identitynones sso-user '{"externalId": "sso-user@example.org", "appData": null}'
+	eventually "identity without an enrollment is updated in Ziti" entity_matches identities "$(mr_id identitynones sso-user)" \
+		'.externalId == "sso-user@example.org" and (.appData | length) == 0'
+
 	step "Nothing is updated without a spec change"
 	extended_stamps() {
+		stamps configs "${hosts}"
+		stamps services "$(mr_id services web-pair)"
+		stamps identities "${sensor}" "${operator}" "$(mr_id identitynones sso-user)"
 		stamps edge-routers "$(mr_id edgerouters public-router)"
 		stamps edge-router-policies "$(mr_id edgerouterpolicies web-clients-public-routers)"
 		stamps service-edge-router-policies "$(mr_id serviceedgerouterpolicies web-services-public-routers)"
@@ -463,6 +554,12 @@ test_extended() {
 	expect_gone "OS posture check is gone" posture-checks supported-os
 	expect_gone "MFA posture check is gone" posture-checks mfa
 	expect_gone "auth policy is gone" auth-policies certificates-and-totp
+	expect_gone "host.v2 config is gone" configs web-hosts
+	expect_gone "service with the host.v2 config is gone" services web-pair
+	expect_gone "CA identity is gone" identities sensor
+	expect_gone "password identity is gone" identities operator
+	expect_gone "identity without an enrollment is gone" identities sso-user
+	ziti_delete cas "${ca}" || fail "cannot delete the certificate authority"
 }
 
 run_tests() {
