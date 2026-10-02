@@ -48,8 +48,8 @@ How to read the table:
 - **End-to-end test** says which stage of [`test/e2e/e2e.sh`](test/e2e/e2e.sh)
   covers the kind against a real OpenZiti controller: the entity is created
   as declared, follows a spec change, is not touched without one, and is
-  deleted with its managed resource. All eleven kinds pass against OpenZiti
-  2.0.6 (last run on 2026-10-02).
+  deleted with its managed resource. CI runs it on every pull request
+  against OpenZiti 2.0.6, and all eleven kinds pass.
 
 ## How it behaves
 
@@ -243,7 +243,9 @@ The end-to-end test starts an OpenZiti controller from
 out-of-cluster, applies the examples and checks the result through the Ziti
 API: the entities exist as declared, follow spec changes, are restored after
 being changed in Ziti directly, are not updated without a spec change, and
-are deleted with their managed resources.
+are deleted with their managed resources. It starts OpenZiti 2.0.6; set
+`ZITI_VERSION` for another release. In CI the `unit-tests` job runs it after
+the unit tests, until the workflow gets a job of its own for it.
 
 `test/e2e/e2e.sh test` runs only the checks, against a provider that is
 already running: point `KUBECONFIG` at the cluster with the CRDs through
@@ -254,7 +256,8 @@ entities.
 
 ## Roadmap
 
-1. Run the end-to-end suite in CI on every pull request.
+1. Give the end-to-end suite its own CI job; the `unit-tests` job runs it for
+   now.
 2. Add the missing kinds, starting with `ConfigHostV2` and the other identity
    enrollments.
 3. Renew expired enrollment tokens.
