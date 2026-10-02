@@ -1,0 +1,746 @@
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  annotations:
+    controller-gen.kubebuilder.io/version: v0.20.0
+  name: confighostv1s.ziti.crossplane.io
+spec:
+  group: ziti.crossplane.io
+  names:
+    categories:
+    - crossplane
+    - managed
+    - ziti
+    kind: ConfigHostV1
+    listKind: ConfigHostV1List
+    plural: confighostv1s
+    singular: confighostv1
+  scope: Namespaced
+  versions:
+  - additionalPrinterColumns:
+    - jsonPath: .spec.forProvider.name
+      name: NAME
+      type: string
+    - jsonPath: .status.atProvider.id
+      name: ID
+      type: string
+    - jsonPath: .status.conditions[?(@.type=="Ready")].status
+      name: READY
+      type: string
+    - jsonPath: .metadata.creationTimestamp
+      name: AGE
+      type: date
+    name: v1alpha1
+    schema:
+      openAPIV3Schema:
+        description: ConfigHostV1 is the Schema for the ConfigHostV1s API.
+        properties:
+          apiVersion:
+            description: |-
+              APIVersion defines the versioned schema of this representation of an object.
+              Servers should convert recognized schemas to the latest internal value, and
+              may reject unrecognized values.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
+            type: string
+          kind:
+            description: |-
+              Kind is a string value representing the REST resource this object represents.
+              Servers may infer this from the endpoint the client submits requests to.
+              Cannot be updated.
+              In CamelCase.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
+            type: string
+          metadata:
+            type: object
+          spec:
+            description: ConfigHostV1Spec specifies the desired state of a Ziti Host
+              V1 Config.
+            properties:
+              forProvider:
+                description: ConfigHostV1Parameters define the desired state of a
+                  Ziti Host V1 Config.
+                properties:
+                  address:
+                    description: Address is the host address.
+                    type: string
+                  allowedAddresses:
+                    description: AllowedAddresses is a list of addresses that can
+                      be forwarded.
+                    items:
+                      type: string
+                    type: array
+                  allowedPortRanges:
+                    description: AllowedPortRanges is a list of port ranges that can
+                      be forwarded.
+                    items:
+                      description: PortRange defines a range of ports.
+                      properties:
+                        high:
+                          description: High is the high port number.
+                          format: int32
+                          type: integer
+                        low:
+                          description: Low is the low port number.
+                          format: int32
+                          type: integer
+                      required:
+                      - high
+                      - low
+                      type: object
+                    type: array
+                  allowedProtocols:
+                    description: AllowedProtocols is a list of protocols that can
+                      be forwarded (tcp, udp).
+                    items:
+                      type: string
+                    type: array
+                  allowedSourceAddresses:
+                    description: AllowedSourceAddresses is a list of source addresses
+                      that can be forwarded.
+                    items:
+                      type: string
+                    type: array
+                  configTypeId:
+                    description: ConfigTypeID is the ID of the config type.
+                    type: string
+                  forwardAddress:
+                    description: ForwardAddress indicates whether to forward allowed
+                      addresses.
+                    type: boolean
+                  forwardAddressTranslations:
+                    description: ForwardAddressTranslations is a list of address translations
+                      to forward.
+                    items:
+                      description: ForwardAddressTranslation defines an address translation
+                        rule.
+                      properties:
+                        from:
+                          description: From is the source address pattern.
+                          type: string
+                        prefixLength:
+                          description: PrefixLength is the prefix length for the translation.
+                          format: int32
+                          type: integer
+                        to:
+                          description: To is the destination address pattern.
+                          type: string
+                      required:
+                      - from
+                      - prefixLength
+                      - to
+                      type: object
+                    type: array
+                  forwardPort:
+                    description: ForwardPort indicates whether to forward allowed
+                      port ranges.
+                    type: boolean
+                  forwardProtocol:
+                    description: ForwardProtocol indicates whether to forward allowed
+                      protocols.
+                    type: boolean
+                  httpChecks:
+                    description: HTTPChecks is a list of HTTP health checks.
+                    items:
+                      description: HTTPCheck defines an HTTP health check.
+                      properties:
+                        actions:
+                          description: Actions are the actions to take on check results.
+                          items:
+                            description: CheckAction defines an action for health
+                              checks.
+                            properties:
+                              action:
+                                description: Action is the action to take (mark unhealthy,
+                                  mark healthy, send event, increase cost N, decrease
+                                  cost N).
+                                type: string
+                              consecutiveEvents:
+                                default: 1
+                                description: ConsecutiveEvents is the number of consecutive
+                                  events required.
+                                format: int32
+                                type: integer
+                              duration:
+                                description: Duration is the duration for the action.
+                                type: string
+                              trigger:
+                                description: Trigger is the trigger condition (pass,
+                                  fail, change).
+                                enum:
+                                - pass
+                                - fail
+                                - change
+                                type: string
+                            required:
+                            - action
+                            - duration
+                            - trigger
+                            type: object
+                          type: array
+                        body:
+                          description: Body is the request body.
+                          type: string
+                        expectInBody:
+                          description: ExpectInBody is the expected string in response
+                            body.
+                          type: string
+                        expectStatus:
+                          default: 200
+                          description: ExpectStatus is the expected HTTP status code.
+                          format: int32
+                          maximum: 1000
+                          minimum: 1
+                          type: integer
+                        interval:
+                          description: Interval is the check interval (e.g., "10s").
+                          type: string
+                        method:
+                          description: Method is the HTTP method (GET, PUT, POST,
+                            PATCH).
+                          enum:
+                          - GET
+                          - PUT
+                          - POST
+                          - PATCH
+                          type: string
+                        timeout:
+                          description: Timeout is the check timeout (e.g., "5s").
+                          type: string
+                        url:
+                          description: URL is the URL to check.
+                          type: string
+                      required:
+                      - actions
+                      - interval
+                      - method
+                      - timeout
+                      - url
+                      type: object
+                    type: array
+                  listenOptions:
+                    description: ListenOptions defines listen options.
+                    properties:
+                      bindUsingEdgeIdentity:
+                        description: BindUsingEdgeIdentity indicates whether to bind
+                          using edge identity.
+                        type: boolean
+                      connectTimeout:
+                        description: ConnectTimeout is the connection timeout (e.g.,
+                          "5s").
+                        type: string
+                      cost:
+                        default: 0
+                        description: Cost is the cost for this listener.
+                        format: int32
+                        maximum: 65535
+                        minimum: 0
+                        type: integer
+                      maxConnections:
+                        default: 65535
+                        description: MaxConnections is the maximum number of connections.
+                        format: int32
+                        maximum: 65535
+                        minimum: 1
+                        type: integer
+                      precedence:
+                        default: default
+                        description: Precedence is the precedence level (default,
+                          required, failed).
+                        enum:
+                        - default
+                        - required
+                        - failed
+                        type: string
+                    type: object
+                  name:
+                    description: Name of the config.
+                    type: string
+                  port:
+                    description: Port is the host port.
+                    format: int32
+                    maximum: 65535
+                    minimum: 1
+                    type: integer
+                  portChecks:
+                    description: PortChecks is a list of port health checks.
+                    items:
+                      description: PortCheck defines a port health check.
+                      properties:
+                        actions:
+                          description: Actions are the actions to take on check results.
+                          items:
+                            description: CheckAction defines an action for health
+                              checks.
+                            properties:
+                              action:
+                                description: Action is the action to take (mark unhealthy,
+                                  mark healthy, send event, increase cost N, decrease
+                                  cost N).
+                                type: string
+                              consecutiveEvents:
+                                default: 1
+                                description: ConsecutiveEvents is the number of consecutive
+                                  events required.
+                                format: int32
+                                type: integer
+                              duration:
+                                description: Duration is the duration for the action.
+                                type: string
+                              trigger:
+                                description: Trigger is the trigger condition (pass,
+                                  fail, change).
+                                enum:
+                                - pass
+                                - fail
+                                - change
+                                type: string
+                            required:
+                            - action
+                            - duration
+                            - trigger
+                            type: object
+                          type: array
+                        address:
+                          description: Address is the address to check.
+                          type: string
+                        interval:
+                          description: Interval is the check interval (e.g., "10s").
+                          type: string
+                        timeout:
+                          description: Timeout is the check timeout (e.g., "5s").
+                          type: string
+                      required:
+                      - actions
+                      - address
+                      - interval
+                      - timeout
+                      type: object
+                    type: array
+                  protocol:
+                    description: Protocol is the host protocol (tcp, udp).
+                    enum:
+                    - tcp
+                    - udp
+                    type: string
+                  proxy:
+                    description: Proxy defines proxy configuration.
+                    properties:
+                      address:
+                        description: Address is the proxy address.
+                        type: string
+                      type:
+                        default: http
+                        description: Type is the proxy type (e.g., "http").
+                        enum:
+                        - http
+                        type: string
+                    type: object
+                  roleAttributes:
+                    description: RoleAttributes is a list of role attributes.
+                    items:
+                      type: string
+                    type: array
+                  tags:
+                    additionalProperties:
+                      type: string
+                    description: Tags is a map of tags.
+                    type: object
+                required:
+                - name
+                type: object
+              managementPolicies:
+                default:
+                - '*'
+                description: |-
+                  THIS IS A BETA FIELD. It is on by default but can be opted out
+                  through a Crossplane feature flag.
+                  ManagementPolicies specify the array of actions Crossplane is allowed to
+                  take on the managed and external resources.
+                  See the design doc for more information: https://github.com/crossplane/crossplane/blob/499895a25d1a1a0ba1604944ef98ac7a1a71f197/design/design-doc-observe-only-resources.md?plain=1#L223
+                  and this one: https://github.com/crossplane/crossplane/blob/444267e84783136daa93568b364a5f01228cacbe/design/one-pager-ignore-changes.md
+                items:
+                  description: |-
+                    A ManagementAction represents an action that the Crossplane controllers
+                    can take on an external resource.
+                  enum:
+                  - Observe
+                  - Create
+                  - Update
+                  - Delete
+                  - LateInitialize
+                  - '*'
+                  type: string
+                type: array
+              providerConfigRef:
+                default:
+                  kind: ClusterProviderConfig
+                  name: default
+                description: |-
+                  ProviderConfigReference specifies how the provider that will be used to
+                  create, observe, update, and delete this managed resource should be
+                  configured.
+                properties:
+                  kind:
+                    description: Kind of the referenced object.
+                    type: string
+                  name:
+                    description: Name of the referenced object.
+                    type: string
+                required:
+                - kind
+                - name
+                type: object
+              writeConnectionSecretToRef:
+                description: |-
+                  WriteConnectionSecretToReference specifies the namespace and name of a
+                  Secret to which any connection details for this managed resource should
+                  be written. Connection details frequently include the endpoint, username,
+                  and password required to connect to the managed resource.
+                properties:
+                  name:
+                    description: Name of the secret.
+                    type: string
+                required:
+                - name
+                type: object
+            required:
+            - forProvider
+            type: object
+          status:
+            description: ConfigHostV1Status represents the observed state of a Ziti
+              Host V1 Config.
+            properties:
+              atProvider:
+                description: ConfigHostV1Observation represents the observed state
+                  of a Ziti Host V1 Config.
+                properties:
+                  address:
+                    type: string
+                  allowedAddresses:
+                    items:
+                      type: string
+                    type: array
+                  allowedPortRanges:
+                    items:
+                      description: PortRange defines a range of ports.
+                      properties:
+                        high:
+                          description: High is the high port number.
+                          format: int32
+                          type: integer
+                        low:
+                          description: Low is the low port number.
+                          format: int32
+                          type: integer
+                      required:
+                      - high
+                      - low
+                      type: object
+                    type: array
+                  allowedProtocols:
+                    items:
+                      type: string
+                    type: array
+                  allowedSourceAddresses:
+                    items:
+                      type: string
+                    type: array
+                  createdAt:
+                    type: string
+                  forwardAddress:
+                    type: boolean
+                  forwardAddressTranslations:
+                    items:
+                      description: ForwardAddressTranslation defines an address translation
+                        rule.
+                      properties:
+                        from:
+                          description: From is the source address pattern.
+                          type: string
+                        prefixLength:
+                          description: PrefixLength is the prefix length for the translation.
+                          format: int32
+                          type: integer
+                        to:
+                          description: To is the destination address pattern.
+                          type: string
+                      required:
+                      - from
+                      - prefixLength
+                      - to
+                      type: object
+                    type: array
+                  forwardPort:
+                    type: boolean
+                  forwardProtocol:
+                    type: boolean
+                  httpChecks:
+                    items:
+                      description: HTTPCheck defines an HTTP health check.
+                      properties:
+                        actions:
+                          description: Actions are the actions to take on check results.
+                          items:
+                            description: CheckAction defines an action for health
+                              checks.
+                            properties:
+                              action:
+                                description: Action is the action to take (mark unhealthy,
+                                  mark healthy, send event, increase cost N, decrease
+                                  cost N).
+                                type: string
+                              consecutiveEvents:
+                                default: 1
+                                description: ConsecutiveEvents is the number of consecutive
+                                  events required.
+                                format: int32
+                                type: integer
+                              duration:
+                                description: Duration is the duration for the action.
+                                type: string
+                              trigger:
+                                description: Trigger is the trigger condition (pass,
+                                  fail, change).
+                                enum:
+                                - pass
+                                - fail
+                                - change
+                                type: string
+                            required:
+                            - action
+                            - duration
+                            - trigger
+                            type: object
+                          type: array
+                        body:
+                          description: Body is the request body.
+                          type: string
+                        expectInBody:
+                          description: ExpectInBody is the expected string in response
+                            body.
+                          type: string
+                        expectStatus:
+                          default: 200
+                          description: ExpectStatus is the expected HTTP status code.
+                          format: int32
+                          maximum: 1000
+                          minimum: 1
+                          type: integer
+                        interval:
+                          description: Interval is the check interval (e.g., "10s").
+                          type: string
+                        method:
+                          description: Method is the HTTP method (GET, PUT, POST,
+                            PATCH).
+                          enum:
+                          - GET
+                          - PUT
+                          - POST
+                          - PATCH
+                          type: string
+                        timeout:
+                          description: Timeout is the check timeout (e.g., "5s").
+                          type: string
+                        url:
+                          description: URL is the URL to check.
+                          type: string
+                      required:
+                      - actions
+                      - interval
+                      - method
+                      - timeout
+                      - url
+                      type: object
+                    type: array
+                  id:
+                    type: string
+                  listenOptions:
+                    description: ListenOptions defines listen options for the host
+                      config.
+                    properties:
+                      bindUsingEdgeIdentity:
+                        description: BindUsingEdgeIdentity indicates whether to bind
+                          using edge identity.
+                        type: boolean
+                      connectTimeout:
+                        description: ConnectTimeout is the connection timeout (e.g.,
+                          "5s").
+                        type: string
+                      cost:
+                        default: 0
+                        description: Cost is the cost for this listener.
+                        format: int32
+                        maximum: 65535
+                        minimum: 0
+                        type: integer
+                      maxConnections:
+                        default: 65535
+                        description: MaxConnections is the maximum number of connections.
+                        format: int32
+                        maximum: 65535
+                        minimum: 1
+                        type: integer
+                      precedence:
+                        default: default
+                        description: Precedence is the precedence level (default,
+                          required, failed).
+                        enum:
+                        - default
+                        - required
+                        - failed
+                        type: string
+                    type: object
+                  name:
+                    type: string
+                  port:
+                    format: int32
+                    type: integer
+                  portChecks:
+                    items:
+                      description: PortCheck defines a port health check.
+                      properties:
+                        actions:
+                          description: Actions are the actions to take on check results.
+                          items:
+                            description: CheckAction defines an action for health
+                              checks.
+                            properties:
+                              action:
+                                description: Action is the action to take (mark unhealthy,
+                                  mark healthy, send event, increase cost N, decrease
+                                  cost N).
+                                type: string
+                              consecutiveEvents:
+                                default: 1
+                                description: ConsecutiveEvents is the number of consecutive
+                                  events required.
+                                format: int32
+                                type: integer
+                              duration:
+                                description: Duration is the duration for the action.
+                                type: string
+                              trigger:
+                                description: Trigger is the trigger condition (pass,
+                                  fail, change).
+                                enum:
+                                - pass
+                                - fail
+                                - change
+                                type: string
+                            required:
+                            - action
+                            - duration
+                            - trigger
+                            type: object
+                          type: array
+                        address:
+                          description: Address is the address to check.
+                          type: string
+                        interval:
+                          description: Interval is the check interval (e.g., "10s").
+                          type: string
+                        timeout:
+                          description: Timeout is the check timeout (e.g., "5s").
+                          type: string
+                      required:
+                      - actions
+                      - address
+                      - interval
+                      - timeout
+                      type: object
+                    type: array
+                  protocol:
+                    type: string
+                  proxy:
+                    description: ProxyConfig defines proxy configuration.
+                    properties:
+                      address:
+                        description: Address is the proxy address.
+                        type: string
+                      type:
+                        default: http
+                        description: Type is the proxy type (e.g., "http").
+                        enum:
+                        - http
+                        type: string
+                    type: object
+                  roleAttributes:
+                    items:
+                      type: string
+                    type: array
+                  tags:
+                    additionalProperties:
+                      type: string
+                    type: object
+                  updatedAt:
+                    type: string
+                type: object
+              conditions:
+                description: Conditions of the resource.
+                items:
+                  description: A Condition that may apply to a resource.
+                  properties:
+                    lastTransitionTime:
+                      description: |-
+                        LastTransitionTime is the last time this condition transitioned from one
+                        status to another.
+                      format: date-time
+                      type: string
+                    message:
+                      description: |-
+                        A Message containing details about this condition's last transition from
+                        one status to another, if any.
+                      type: string
+                    observedGeneration:
+                      description: |-
+                        ObservedGeneration represents the .metadata.generation that the condition was set based upon.
+                        For instance, if .metadata.generation is currently 12, but the .status.conditions[x].observedGeneration is 9, the condition is out of date
+                        with respect to the current state of the instance.
+                      format: int64
+                      type: integer
+                    reason:
+                      description: A Reason for this condition's last transition from
+                        one status to another.
+                      type: string
+                    status:
+                      description: Status of this condition; is it currently True,
+                        False, or Unknown?
+                      type: string
+                    type:
+                      description: |-
+                        Type of this condition. At most one of each condition type may apply to
+                        a resource at any point in time.
+                      type: string
+                  required:
+                  - lastTransitionTime
+                  - reason
+                  - status
+                  - type
+                  type: object
+                type: array
+                x-kubernetes-list-map-keys:
+                - type
+                x-kubernetes-list-type: map
+              lastHandledReconcileAt:
+                description: |-
+                  LastHandledReconcileAt holds the value of the most recent
+                  reconcile-requested-at annotation token that the controller has
+                  processed. Users can compare this to the annotation to determine
+                  whether a reconcile request has been handled.
+                type: string
+              observedGeneration:
+                description: |-
+                  ObservedGeneration is the latest metadata.generation
+                  which resulted in either a ready state, or stalled due to error
+                  it can not recover from without human intervention.
+                format: int64
+                type: integer
+            type: object
+        required:
+        - spec
+        type: object
+    served: true
+    storage: true
+    subresources:
+      status: {}
