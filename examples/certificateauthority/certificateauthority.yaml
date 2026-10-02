@@ -1,0 +1,39 @@
+# A third-party certificate authority: identities such as the one in
+# ../identity/ca.yaml enroll with certificates it issued.
+#
+# certPem is the certificate of your own certificate authority. The one below
+# is a placeholder whose private key was thrown away, so nobody can verify it.
+#
+# The resource is ready as soon as the certificate authority exists in Ziti.
+# Ziti accepts its certificates for authentication only once the certificate
+# authority is verified, which takes its private key: sign a certificate with
+# the common name in status.atProvider.verificationToken and post it to
+# /edge/management/v1/cas/<id>/verify. status.atProvider.isVerified tells
+# whether that happened.
+apiVersion: ziti.crossplane.io/v1alpha1
+kind: CertificateAuthority
+metadata:
+  name: device-ca
+spec:
+  providerConfigRef:
+    kind: ProviderConfig
+    name: default
+  forProvider:
+    name: device-ca
+    isAuthEnabled: true
+    isOttCaEnrollmentEnabled: true
+    isAutoCaEnrollmentEnabled: false
+    certPem: |
+      -----BEGIN CERTIFICATE-----
+      MIIBoDCCAUWgAwIBAgIUBC7NmEBB0amzuZXNt1MltavdjX8wCgYIKoZIzj0EAwIw
+      HDEaMBgGA1UEAwwRRXhhbXBsZSBEZXZpY2UgQ0EwIBcNMjYxMDAyMjIzMjE2WhgP
+      MjEyNjA5MDgyMjMyMTZaMBwxGjAYBgNVBAMMEUV4YW1wbGUgRGV2aWNlIENBMFkw
+      EwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAENm8FPnvuGAp1DZt1B8Hab5eKRB+iZF3F
+      YN3wV/PRq2057rrZM9tMI0ZNTFHe8rC4fW+Yxaq0fWBRg9o66xb9haNjMGEwHQYD
+      VR0OBBYEFFRjBSUc7WKDNHvIQ+34YgZWswZPMB8GA1UdIwQYMBaAFFRjBSUc7WKD
+      NHvIQ+34YgZWswZPMA8GA1UdEwEB/wQFMAMBAf8wDgYDVR0PAQH/BAQDAgEGMAoG
+      CCqGSM49BAMCA0kAMEYCIQCSmILSALCaVAjbxsN9zSlKLNqckbdKrhj0pExFj+Su
+      qAIhALf/S4ORtC/m/+y6OGy/LknkoSlQTCnj4a4Qugq0x12v
+      -----END CERTIFICATE-----
+    tags:
+      team: platform

@@ -210,8 +210,8 @@ spec:
                                 description: ExpectStatus is the expected HTTP status
                                   code.
                                 format: int32
-                                maximum: 1000
-                                minimum: 1
+                                maximum: 599
+                                minimum: 100
                                 type: integer
                               interval:
                                 description: Interval is the check interval (e.g.,
@@ -578,8 +578,8 @@ spec:
                                 description: ExpectStatus is the expected HTTP status
                                   code.
                                 format: int32
-                                maximum: 1000
-                                minimum: 1
+                                maximum: 599
+                                minimum: 100
                                 type: integer
                               interval:
                                 description: Interval is the check interval (e.g.,

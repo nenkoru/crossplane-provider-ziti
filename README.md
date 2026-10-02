@@ -36,8 +36,8 @@ namespaced, and a cluster-scoped `ClusterProviderConfig` is available.
 | `PostureCheckMac` | posture check of type MAC | no | no | no | no | no |
 | `PostureCheckProcess` | posture check of type PROCESS | no | no | no | no | no |
 | `PostureCheckMultiProcess` | posture check of type PROCESS_MULTI | no | no | no | no | no |
-| `CertificateAuthority` | certificate authority | no | no | no | no | no |
-| `ExternalJWTSigner` | external JWT signer | no | no | no | no | no |
+| `CertificateAuthority` | third-party certificate authority | yes | yes | yes | yes | authentication |
+| `ExternalJWTSigner` | external JWT signer | yes | yes | yes | yes | authentication |
 
 How to read the table:
 
@@ -79,6 +79,24 @@ How to read the table:
   roles take `#attribute`, `#all` or `@name`, where the name is resolved to an
   ID. A resource that refers to something that does not exist yet reports the
   error in its `Synced` condition and is retried.
+- **Certificate authorities.** A `CertificateAuthority` is ready when it
+  exists in Ziti as declared, verified or not. The provider cannot verify it:
+  that takes a certificate signed with the private key of the certificate
+  authority. Its status has what the owner of that key needs:
+  `verificationToken` is the common name the certificate must have, to be
+  posted to `/edge/management/v1/cas/<id>/verify`, and `isVerified` tells
+  whether it is done. Until then Ziti does not accept certificates of the
+  certificate authority for authentication. `fingerprint` tells which
+  certificate Ziti holds. Deleting a certificate authority deletes the pending
+  enrollments with its certificates: an `IdentityCA` that refers to it stays,
+  but can no longer enroll.
+- **External JWT signers.** An `AuthPolicy` takes names or IDs of signers in
+  `primary.extJwt.allowedSigners` and `secondary.requireExtJwtSigner`, and an
+  `ExternalJWTSigner` the name or ID of an auth policy in
+  `enrollAuthPolicyId`. Ziti does not delete a signer that an auth policy
+  refers to: the `ExternalJWTSigner` reports the conflict and is deleted once
+  the policy is gone. Ziti ignores the tags of a signer that is being created;
+  they follow with an update right after.
 - **Identities.** The four identity kinds take the same settings and differ
   in how the identity enrolls: `Identity` with a one-time token, `IdentityCA`
   with a one-time token and a certificate of a third-party CA,
@@ -113,13 +131,19 @@ How to read the table:
   `spec.managementPolicies` to keep it. The hosting settings an identity has
   per service are dropped first: Ziti keeps them when a service is deleted
   and then refuses to delete the identity.
-- **Immutable settings.** The `type` of an identity, `IdentityCA.ottca` and
-  `IdentityUPDB.updbUsername` cannot be changed after creation; the API
-  server rejects the change.
+- **Immutable settings.** The `type` of an identity, `IdentityCA.ottca`,
+  `IdentityUPDB.updbUsername` and `CertificateAuthority.certPem` cannot be
+  changed after creation; the API server rejects the change.
 - **Updates.** Entities are updated with `PATCH`, so settings the provider
   does not manage are left alone. `Service` and `AuthPolicy` are replaced
   with `PUT` instead: a `PATCH` of a service ignores `encryptionRequired`, and
   a `PATCH` of an auth policy ignores some password settings.
+  `CertificateAuthority` and `ExternalJWTSigner` are replaced as well: a
+  `PATCH` of a certificate authority drops its external ID claim, and a
+  `PATCH` cannot remove a setting, which a signer that changes from
+  `jwksEndpoint` to `certPem` needs. A setting of these two kinds that is
+  left unset in the spec is therefore not left alone: it is removed in Ziti
+  or reset to the default of Ziti.
 
 ## Running the provider
 

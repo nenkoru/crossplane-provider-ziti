@@ -21,6 +21,7 @@ package authpolicy
 import (
 	"context"
 	"encoding/json"
+	"slices"
 
 	"k8s.io/utils/ptr"
 
@@ -34,6 +35,10 @@ const (
 	defaultMinPasswordLength int64 = 5
 	defaultMaxAttempts       int64 = 5
 )
+
+// signers is the Ziti API collection of the external JWT signers an auth
+// policy refers to.
+const signers = "external-jwt-signers"
 
 // Kind describes how an AuthPolicy maps to the Ziti API.
 var Kind = generic.Kind[*v1alpha1.AuthPolicy]{
@@ -52,8 +57,8 @@ var Kind = generic.Kind[*v1alpha1.AuthPolicy]{
 
 // desired always describes every authentication method: the Ziti API
 // requires all of them, and a method that is left out of the spec is not
-// allowed.
-func desired(_ context.Context, _ *client.Client, mg *v1alpha1.AuthPolicy) (map[string]any, error) {
+// allowed. External JWT signers may be given by name.
+func desired(ctx context.Context, api *client.Client, mg *v1alpha1.AuthPolicy) (map[string]any, error) {
 	p := mg.Spec.ForProvider
 
 	primary := ptr.Deref(p.Primary, v1alpha1.AuthMethods{})
@@ -61,6 +66,23 @@ func desired(_ context.Context, _ *client.Client, mg *v1alpha1.AuthPolicy) (map[
 	updb := ptr.Deref(primary.UPDB, v1alpha1.UPDBAuth{})
 	extJWT := ptr.Deref(primary.ExtJWT, v1alpha1.ExtJWTAuth{})
 	secondary := ptr.Deref(p.Secondary, v1alpha1.SecondaryAuth{})
+
+	allowedSigners, err := generic.ResolveIDs(ctx, api, signers, extJWT.AllowedSigners)
+	if err != nil {
+		return nil, err
+	}
+	// Ziti stores the allowed signers as a set and reports them sorted.
+	slices.Sort(allowedSigners)
+	allowedSigners = slices.Compact(allowedSigners)
+
+	var requiredSigner *string
+	if s := ptr.Deref(secondary.RequireExtJWTSigner, ""); s != "" {
+		id, err := api.ResolveID(ctx, signers, s)
+		if err != nil {
+			return nil, err
+		}
+		requiredSigner = &id
+	}
 
 	return map[string]any{
 		"name": p.Name,
@@ -80,12 +102,12 @@ func desired(_ context.Context, _ *client.Client, mg *v1alpha1.AuthPolicy) (map[
 			},
 			"extJwt": map[string]any{
 				"allowed":        extJWT.Allowed,
-				"allowedSigners": generic.Strings(extJWT.AllowedSigners),
+				"allowedSigners": allowedSigners,
 			},
 		},
 		"secondary": map[string]any{
 			"requireTotp":         secondary.RequireTOTP,
-			"requireExtJwtSigner": secondary.RequireExtJWTSigner,
+			"requireExtJwtSigner": requiredSigner,
 		},
 		"tags": generic.Tags(p.Tags),
 	}, nil

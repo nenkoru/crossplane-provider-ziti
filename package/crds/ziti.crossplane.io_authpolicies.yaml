@@ -84,8 +84,9 @@ spec:
                             description: Allowed enables external JWT authentication.
                             type: boolean
                           allowedSigners:
-                            description: AllowedSigners is the list of IDs of the
-                              allowed external JWT signers.
+                            description: |-
+                              AllowedSigners is the list of names or IDs of the external JWT signers
+                              whose tokens are accepted. Every signer is accepted if it is empty.
                             items:
                               type: string
                             type: array
@@ -134,8 +135,8 @@ spec:
                     properties:
                       requireExtJwtSigner:
                         description: |-
-                          RequireExtJWTSigner is the ID of an external JWT signer whose token is
-                          required in addition to the primary method.
+                          RequireExtJWTSigner is the name or ID of an external JWT signer whose
+                          token is required in addition to the primary method.
                         type: string
                       requireTotp:
                         description: RequireTOTP requires a time-based one-time password.
@@ -239,8 +240,9 @@ spec:
                             description: Allowed enables external JWT authentication.
                             type: boolean
                           allowedSigners:
-                            description: AllowedSigners is the list of IDs of the
-                              allowed external JWT signers.
+                            description: |-
+                              AllowedSigners is the list of names or IDs of the external JWT signers
+                              whose tokens are accepted. Every signer is accepted if it is empty.
                             items:
                               type: string
                             type: array
@@ -290,8 +292,8 @@ spec:
                     properties:
                       requireExtJwtSigner:
                         description: |-
-                          RequireExtJWTSigner is the ID of an external JWT signer whose token is
-                          required in addition to the primary method.
+                          RequireExtJWTSigner is the name or ID of an external JWT signer whose
+                          token is required in addition to the primary method.
                         type: string
                       requireTotp:
                         description: RequireTOTP requires a time-based one-time password.
