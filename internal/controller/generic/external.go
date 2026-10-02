@@ -25,6 +25,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"maps"
+	"time"
 
 	"github.com/crossplane/crossplane-runtime/v2/pkg/errors"
 	"github.com/crossplane/crossplane-runtime/v2/pkg/meta"
@@ -75,6 +76,11 @@ type Kind[T resource.ModernManaged] struct {
 	// CreateOnly optionally returns fields that are only sent when the entity
 	// is created, because they are immutable or write-only.
 	CreateOnly func(ctx context.Context, api *client.Client, mg T) (map[string]any, error)
+
+	// BeforeDelete optionally holds fields that are reset right before the
+	// entity is deleted. Ziti does not delete an entity that still refers to
+	// an entity that is gone.
+	BeforeDelete map[string]any
 
 	// Observe copies the supplied Ziti entity into the status of the managed
 	// resource.
@@ -209,8 +215,15 @@ func (e *external[T]) Create(ctx context.Context, mg T) (managed.ExternalCreatio
 		maps.Copy(desired, createOnly)
 	}
 
+	sent := time.Now()
 	id, err := e.api.Create(ctx, e.kind.Collection, desired)
 	if err != nil {
+		// Without an answer of the controller the entity may exist all the
+		// same. The reconciler saves the annotations of a failed creation, and
+		// the CreationRecoverer looks for the entity before the next attempt.
+		if !client.IsRejected(err) && mg.GetAnnotations()[AnnotationKeyCreateUnconfirmed] == "" {
+			meta.AddAnnotations(mg, map[string]string{AnnotationKeyCreateUnconfirmed: sent.UTC().Format(time.RFC3339)})
+		}
 		return managed.ExternalCreation{}, errors.Wrap(err, errCreate)
 	}
 
@@ -240,10 +253,25 @@ func (e *external[T]) Delete(ctx context.Context, mg T) (managed.ExternalDelete,
 		return managed.ExternalDelete{}, nil
 	}
 
-	if err := e.api.Delete(ctx, e.kind.Collection, id); err != nil && !client.IsNotFound(err) {
-		return managed.ExternalDelete{}, errors.Wrap(err, errDelete)
+	err := e.delete(ctx, id)
+	if client.IsNotFound(err) {
+		// Ziti also answers "not found" when something the entity refers to
+		// is gone. The deletion is only done if the entity itself is gone.
+		if _, getErr := e.api.Get(ctx, e.kind.Collection, id); client.IsNotFound(getErr) {
+			return managed.ExternalDelete{}, nil
+		}
 	}
-	return managed.ExternalDelete{}, nil
+	return managed.ExternalDelete{}, errors.Wrap(err, errDelete)
+}
+
+// delete deletes the entity with the supplied ID.
+func (e *external[T]) delete(ctx context.Context, id string) error {
+	if e.kind.BeforeDelete != nil {
+		if err := e.api.Patch(ctx, e.kind.Collection, id, e.kind.BeforeDelete); err != nil {
+			return err
+		}
+	}
+	return e.api.Delete(ctx, e.kind.Collection, id)
 }
 
 func (e *external[T]) Disconnect(_ context.Context) error {
@@ -251,15 +279,18 @@ func (e *external[T]) Disconnect(_ context.Context) error {
 }
 
 // stringifyTags makes sure all tag values are strings. Ziti also accepts
-// booleans, numbers and null as tag values.
+// booleans, numbers and null as values of tags and of the application data of
+// an identity, which is a second set of tags.
 func stringifyTags(entity map[string]any) {
-	tags, ok := entity["tags"].(map[string]any)
-	if !ok {
-		return
-	}
-	for k, v := range tags {
-		if _, ok := v.(string); !ok {
-			tags[k] = fmt.Sprint(v)
+	for _, field := range []string{"tags", "appData"} {
+		tags, ok := entity[field].(map[string]any)
+		if !ok {
+			continue
+		}
+		for k, v := range tags {
+			if _, ok := v.(string); !ok {
+				tags[k] = fmt.Sprint(v)
+			}
 		}
 	}
 }

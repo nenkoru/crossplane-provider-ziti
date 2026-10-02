@@ -154,11 +154,10 @@ type ConfigHostV1Status struct {
 	AtProvider                 ConfigHostV1Observation `json:"atProvider,omitempty"`
 }
 
-// ConfigHostV1Parameters define the desired state of a Ziti Host V1 Config.
-type ConfigHostV1Parameters struct {
-	// Name of the config.
-	Name string `json:"name"`
-
+// HostTerminator describes where a hosting tunneler sends the traffic of a
+// service and how it listens for it. It is the whole of a host.v1 config and
+// one terminator of a host.v2 config.
+type HostTerminator struct {
 	// Address is the host address.
 	// +optional
 	Address *string `json:"address,omitempty"`
@@ -222,6 +221,14 @@ type ConfigHostV1Parameters struct {
 	// PortChecks is a list of port health checks.
 	// +optional
 	PortChecks []PortCheck `json:"portChecks,omitempty"`
+}
+
+// ConfigHostV1Parameters define the desired state of a Ziti Host V1 Config.
+type ConfigHostV1Parameters struct {
+	// Name of the config.
+	Name string `json:"name"`
+
+	HostTerminator `json:",inline"`
 
 	// Tags is a map of tags.
 	// +optional

@@ -227,6 +227,56 @@ func TestSessionIsReusedAndRenewed(t *testing.T) {
 	}
 }
 
+func TestClockAhead(t *testing.T) {
+	srv := fake.NewServer()
+	defer srv.Close()
+
+	ctx := context.Background()
+	c := newClient(t, srv)
+
+	if _, known := c.ClockAhead(); known {
+		t.Errorf("ClockAhead() before any response: want the offset to be unknown")
+	}
+
+	for _, want := range []time.Duration{time.Hour, -time.Hour, 0} {
+		srv.SetClockAhead(want)
+		if _, err := c.Find(ctx, "services", `name="x"`); err != nil {
+			t.Fatalf("Find(...): %v", err)
+		}
+
+		// The controller tells the time to the second.
+		got, known := c.ClockAhead()
+		if diff := got - want; !known || diff < -2*time.Second || diff > 2*time.Second {
+			t.Errorf("ClockAhead() with a clock %s ahead: got %s, known %t", want, got, known)
+		}
+	}
+}
+
+func TestIsRejected(t *testing.T) {
+	srv := fake.NewServer()
+	defer srv.Close()
+
+	ctx := context.Background()
+	c := newClient(t, srv)
+
+	if _, err := c.Create(ctx, "services", map[string]any{"name": "web"}); err != nil {
+		t.Fatalf("Create(...): %v", err)
+	}
+	_, err := c.Create(ctx, "services", map[string]any{"name": "web"})
+	if !client.IsRejected(err) {
+		t.Errorf("IsRejected(%v): want true for a request Ziti refused", err)
+	}
+
+	srv.LoseNextCreateResponse()
+	_, err = c.Create(ctx, "services", map[string]any{"name": "api"})
+	if err == nil || client.IsRejected(err) {
+		t.Errorf("IsRejected(%v): want an error that leaves the outcome open", err)
+	}
+	if got := srv.Len("services"); got != 2 {
+		t.Errorf("want Ziti to have carried out the request it did not answer, got %d services", got)
+	}
+}
+
 func TestAuthenticationFailure(t *testing.T) {
 	srv := fake.NewServer()
 	defer srv.Close()

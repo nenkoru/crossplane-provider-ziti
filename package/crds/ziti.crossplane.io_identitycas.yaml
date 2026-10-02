@@ -4,7 +4,7 @@ kind: CustomResourceDefinition
 metadata:
   annotations:
     controller-gen.kubebuilder.io/version: v0.20.0
-  name: identities.ziti.crossplane.io
+  name: identitycas.ziti.crossplane.io
 spec:
   group: ziti.crossplane.io
   names:
@@ -12,10 +12,10 @@ spec:
     - crossplane
     - managed
     - ziti
-    kind: Identity
-    listKind: IdentityList
-    plural: identities
-    singular: identity
+    kind: IdentityCA
+    listKind: IdentityCAList
+    plural: identitycas
+    singular: identityca
   scope: Namespaced
   versions:
   - additionalPrinterColumns:
@@ -35,8 +35,9 @@ spec:
     schema:
       openAPIV3Schema:
         description: |-
-          Identity is a Ziti identity with one-time token (OTT) enrollment. The
-          enrollment token is published to the connection secret under the key
+          IdentityCA is a Ziti identity that enrolls with a one-time token and a
+          client certificate issued by a third-party certificate authority (OTT CA).
+          The enrollment token is published to the connection secret under the key
           enrollmentToken until the identity enrolls.
         properties:
           apiVersion:
@@ -57,12 +58,12 @@ spec:
           metadata:
             type: object
           spec:
-            description: IdentitySpec defines the desired state of an Identity.
+            description: IdentityCASpec defines the desired state of an IdentityCA.
             properties:
               forProvider:
                 description: |-
-                  IdentityParameters define the desired state of a Ziti Identity. All
-                  identity kinds share them; the kinds differ in how the identity enrolls.
+                  IdentityCAParameters define the desired state of a Ziti identity that
+                  enrolls with a certificate of a certificate authority.
                 properties:
                   appData:
                     additionalProperties:
@@ -103,6 +104,15 @@ spec:
                   name:
                     description: Name of the identity.
                     type: string
+                  ottca:
+                    description: |-
+                      Ottca is the name or ID of the certificate authority whose certificates
+                      the identity may enroll with. It cannot be changed after creation.
+                    minLength: 1
+                    type: string
+                    x-kubernetes-validations:
+                    - message: ottca cannot be changed after creation
+                      rule: self == oldSelf
                   roleAttributes:
                     description: RoleAttributes for the identity.
                     items:
@@ -143,6 +153,7 @@ spec:
                       rule: self == oldSelf
                 required:
                 - name
+                - ottca
                 type: object
               managementPolicies:
                 default:
@@ -203,7 +214,7 @@ spec:
             - forProvider
             type: object
           status:
-            description: IdentityStatus defines the observed state of an Identity.
+            description: IdentityCAStatus defines the observed state of an IdentityCA.
             properties:
               atProvider:
                 description: IdentityObservation keeps the observed state of an identity

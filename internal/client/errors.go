@@ -97,6 +97,14 @@ func IsNotFound(err error) bool {
 	return errors.As(err, &apiErr) && apiErr.StatusCode == http.StatusNotFound
 }
 
+// IsRejected returns true if the controller answered that it did not carry
+// out the request. Any other error, such as a timeout or a failure of a proxy
+// in between, leaves open whether the request took effect.
+func IsRejected(err error) bool {
+	var apiErr *Error
+	return errors.As(err, &apiErr) && apiErr.StatusCode >= http.StatusBadRequest && apiErr.StatusCode < http.StatusInternalServerError
+}
+
 func isUnauthorized(err error) bool {
 	var apiErr *Error
 	return errors.As(err, &apiErr) && apiErr.StatusCode == http.StatusUnauthorized

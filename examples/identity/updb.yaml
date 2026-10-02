@@ -1,0 +1,18 @@
+# An identity that authenticates with a username and a password. It enrolls
+# by choosing its password with the token that is written to the connection
+# secret under the key enrollmentToken.
+apiVersion: ziti.crossplane.io/v1alpha1
+kind: IdentityUPDB
+metadata:
+  name: operator
+spec:
+  providerConfigRef:
+    kind: ProviderConfig
+    name: default
+  writeConnectionSecretToRef:
+    name: operator-enrollment
+  forProvider:
+    name: operator
+    updbUsername: operator
+    roleAttributes:
+      - operators

@@ -14,9 +14,9 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-// Package confighostv1 maps the ConfigHostV1 managed resource to Ziti configs
-// of type host.v1.
-package confighostv1
+// Package confighostv2 maps the ConfigHostV2 managed resource to Ziti configs
+// of type host.v2.
+package confighostv2
 
 import (
 	"context"
@@ -27,23 +27,23 @@ import (
 	"github.com/crossplane/provider-ziti/internal/controller/generic"
 )
 
-const configType = "host.v1"
+const configType = "host.v2"
 
-// Kind describes how a ConfigHostV1 maps to the Ziti API.
-var Kind = generic.Kind[*v1alpha1.ConfigHostV1]{
-	GVK:        v1alpha1.ConfigHostV1GroupVersionKind,
-	List:       &v1alpha1.ConfigHostV1List{},
+// Kind describes how a ConfigHostV2 maps to the Ziti API.
+var Kind = generic.Kind[*v1alpha1.ConfigHostV2]{
+	GVK:        v1alpha1.ConfigHostV2GroupVersionKind,
+	List:       &v1alpha1.ConfigHostV2List{},
 	Collection: "configs",
 	Desired:    desired,
-	CreateOnly: func(ctx context.Context, api *client.Client, _ *v1alpha1.ConfigHostV1) (map[string]any, error) {
+	CreateOnly: func(ctx context.Context, api *client.Client, _ *v1alpha1.ConfigHostV2) (map[string]any, error) {
 		return generic.ConfigType(ctx, api, configType)
 	},
-	Observe: func(mg *v1alpha1.ConfigHostV1, entity json.RawMessage) error {
+	Observe: func(mg *v1alpha1.ConfigHostV2, entity json.RawMessage) error {
 		return generic.UnmarshalConfig(entity, &mg.Status.AtProvider)
 	},
 }
 
-func desired(_ context.Context, _ *client.Client, mg *v1alpha1.ConfigHostV1) (map[string]any, error) {
+func desired(_ context.Context, _ *client.Client, mg *v1alpha1.ConfigHostV2) (map[string]any, error) {
 	p := mg.Spec.ForProvider
 
 	data, err := generic.ConfigData(p)
@@ -51,7 +51,12 @@ func desired(_ context.Context, _ *client.Client, mg *v1alpha1.ConfigHostV1) (ma
 		return nil, err
 	}
 
-	generic.DropDisabledForwarding(data)
+	terminators, _ := data["terminators"].([]any)
+	for _, terminator := range terminators {
+		if t, ok := terminator.(map[string]any); ok {
+			generic.DropDisabledForwarding(t)
+		}
+	}
 
 	return map[string]any{
 		"name": p.Name,

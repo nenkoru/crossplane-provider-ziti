@@ -19,6 +19,7 @@ package controller_test
 import (
 	"context"
 	"encoding/json"
+	"maps"
 	"strings"
 	"testing"
 
@@ -36,11 +37,15 @@ import (
 	"github.com/crossplane/provider-ziti/internal/client/fake"
 	"github.com/crossplane/provider-ziti/internal/controller/authpolicy"
 	"github.com/crossplane/provider-ziti/internal/controller/confighostv1"
+	"github.com/crossplane/provider-ziti/internal/controller/confighostv2"
 	"github.com/crossplane/provider-ziti/internal/controller/configinterceptv1"
 	"github.com/crossplane/provider-ziti/internal/controller/edgerouter"
 	"github.com/crossplane/provider-ziti/internal/controller/edgerouterpolicy"
 	"github.com/crossplane/provider-ziti/internal/controller/generic"
 	"github.com/crossplane/provider-ziti/internal/controller/identity"
+	"github.com/crossplane/provider-ziti/internal/controller/identityca"
+	"github.com/crossplane/provider-ziti/internal/controller/identitynone"
+	"github.com/crossplane/provider-ziti/internal/controller/identityupdb"
 	"github.com/crossplane/provider-ziti/internal/controller/posturecheckmfa"
 	"github.com/crossplane/provider-ziti/internal/controller/posturecheckos"
 	"github.com/crossplane/provider-ziti/internal/controller/service"
@@ -243,12 +248,14 @@ func TestConfigHostV1(t *testing.T) {
 		mg: &v1alpha1.ConfigHostV1{
 			ObjectMeta: meta1("web-host"),
 			Spec: v1alpha1.ConfigHostV1Spec{ForProvider: v1alpha1.ConfigHostV1Parameters{
-				Name:           "web-host",
-				Address:        ptr.To("localhost"),
-				Port:           ptr.To(int32(8080)),
-				Protocol:       ptr.To("tcp"),
-				ForwardAddress: ptr.To(false),
-				Tags:           map[string]string{"team": "web"},
+				Name: "web-host",
+				HostTerminator: v1alpha1.HostTerminator{
+					Address:        ptr.To("localhost"),
+					Port:           ptr.To(int32(8080)),
+					Protocol:       ptr.To("tcp"),
+					ForwardAddress: ptr.To(false),
+				},
+				Tags: map[string]string{"team": "web"},
 			}},
 		},
 		created: map[string]any{
@@ -275,6 +282,57 @@ func TestConfigHostV1(t *testing.T) {
 				"listenOptions":    map[string]any{"precedence": "required"},
 			},
 			"tags": map[string]any{},
+		},
+	}.run(t)
+}
+
+func TestConfigHostV2(t *testing.T) {
+	lifecycle[*v1alpha1.ConfigHostV2]{
+		kind: confighostv2.Kind,
+		mg: &v1alpha1.ConfigHostV2{
+			ObjectMeta: meta1("web-hosts"),
+			Spec: v1alpha1.ConfigHostV2Spec{ForProvider: v1alpha1.ConfigHostV2Parameters{
+				Name: "web-hosts",
+				Terminators: []v1alpha1.HostTerminator{
+					{Address: ptr.To("web-1.internal"), Port: ptr.To(int32(8080)), Protocol: ptr.To("tcp"), ForwardPort: ptr.To(false)},
+					{Address: ptr.To("web-2.internal"), Port: ptr.To(int32(8080)), Protocol: ptr.To("tcp")},
+				},
+			}},
+		},
+		created: map[string]any{
+			"name":         "web-hosts",
+			"configTypeId": "host-v2-id",
+			"data": map[string]any{"terminators": []any{
+				map[string]any{"address": "web-1.internal", "port": float64(8080), "protocol": "tcp"},
+				map[string]any{"address": "web-2.internal", "port": float64(8080), "protocol": "tcp"},
+			}},
+			"tags": map[string]any{},
+		},
+		update: func(mg *v1alpha1.ConfigHostV2) {
+			mg.Spec.ForProvider.Terminators = []v1alpha1.HostTerminator{{
+				Address:       ptr.To("web-1.internal"),
+				Protocol:      ptr.To("tcp"),
+				ForwardPort:   ptr.To(true),
+				ListenOptions: &v1alpha1.ListenOptions{Precedence: ptr.To("required")},
+				AllowedPortRanges: []v1alpha1.PortRange{
+					{Low: 8000, High: 8999},
+				},
+			}}
+			mg.Spec.ForProvider.Tags = map[string]string{"team": "web"}
+		},
+		updated: map[string]any{
+			"name":         "web-hosts",
+			"configTypeId": "host-v2-id",
+			"data": map[string]any{"terminators": []any{
+				map[string]any{
+					"address":           "web-1.internal",
+					"protocol":          "tcp",
+					"forwardPort":       true,
+					"listenOptions":     map[string]any{"precedence": "required"},
+					"allowedPortRanges": []any{map[string]any{"low": float64(8000), "high": float64(8999)}},
+				},
+			}},
+			"tags": map[string]any{"team": "web"},
 		},
 	}.run(t)
 }
@@ -430,11 +488,35 @@ func TestEdgeRouterPolicy(t *testing.T) {
 	}.run(t)
 }
 
-func TestIdentity(t *testing.T) {
-	enrollment := map[string]any{"ott": map[string]any{"jwt": "jwt-for-web-client", "expiresAt": "2030-01-01T00:00:00.000Z"}}
+// identityBody is the Ziti identity expected for the supplied fields: what
+// the spec leaves out is sent empty, so that it is cleared.
+func identityBody(fields map[string]any) map[string]any {
+	body := map[string]any{
+		"type":                      "Default",
+		"isAdmin":                   false,
+		"roleAttributes":            []any{},
+		"serviceHostingCosts":       map[string]any{},
+		"serviceHostingPrecedences": map[string]any{},
+		"appData":                   map[string]any{},
+		"tags":                      map[string]any{},
+	}
+	maps.Copy(body, fields)
+	return body
+}
 
+// pendingEnrollment is how the fake controller reports an enrollment that
+// has not been completed.
+func pendingEnrollment(method, identity string) map[string]any {
+	return map[string]any{method: map[string]any{"jwt": "jwt-for-" + identity, "expiresAt": "2030-01-01T00:00:00.000Z"}}
+}
+
+func TestIdentity(t *testing.T) {
 	lifecycle[*v1alpha1.Identity]{
 		kind: identity.Kind,
+		seed: func(srv *fake.Server) {
+			srv.Put("services", map[string]any{"id": "svc-1", "name": "web"})
+			srv.Put("auth-policies", map[string]any{"id": "ap-1", "name": "certificates"})
+		},
 		mg: &v1alpha1.Identity{
 			ObjectMeta: meta1("web-client"),
 			Spec: v1alpha1.IdentitySpec{ForProvider: v1alpha1.IdentityParameters{
@@ -442,26 +524,212 @@ func TestIdentity(t *testing.T) {
 				RoleAttributes: []string{"clients"},
 			}},
 		},
-		created: map[string]any{
+		created: identityBody(map[string]any{
 			"name":           "web-client",
-			"type":           "Default",
-			"isAdmin":        false,
 			"roleAttributes": []any{"clients"},
-			"tags":           map[string]any{},
-			"enrollment":     enrollment,
-		},
+			"enrollment":     pendingEnrollment("ott", "web-client"),
+		}),
 		update: func(mg *v1alpha1.Identity) {
-			mg.Spec.ForProvider.RoleAttributes = []string{"clients", "web"}
+			p := &mg.Spec.ForProvider
+			p.RoleAttributes = []string{"clients", "web"}
+			p.AuthPolicyID = ptr.To("certificates")
+			p.ExternalID = ptr.To("web-client@example.com")
+			p.DefaultHostingCost = ptr.To(int32(10))
+			p.DefaultHostingPrecedence = ptr.To("required")
+			p.ServiceHostingCosts = map[string]int32{"web": 100}
+			p.ServiceHostingPrecedences = map[string]string{"svc-1": "failed"}
+			p.AppData = map[string]string{"site": "berlin"}
 		},
-		updated: map[string]any{
-			"name":           "web-client",
-			"type":           "Default",
-			"isAdmin":        false,
-			"roleAttributes": []any{"clients", "web"},
-			"tags":           map[string]any{},
-			"enrollment":     enrollment,
-		},
+		updated: identityBody(map[string]any{
+			"name":                      "web-client",
+			"roleAttributes":            []any{"clients", "web"},
+			"authPolicyId":              "ap-1",
+			"externalId":                "web-client@example.com",
+			"defaultHostingCost":        float64(10),
+			"defaultHostingPrecedence":  "required",
+			"serviceHostingCosts":       map[string]any{"svc-1": float64(100)},
+			"serviceHostingPrecedences": map[string]any{"svc-1": "failed"},
+			"appData":                   map[string]any{"site": "berlin"},
+			"enrollment":                pendingEnrollment("ott", "web-client"),
+		}),
 		details: managed.ConnectionDetails{identity.ConnectionKeyEnrollmentToken: []byte("jwt-for-web-client")},
+	}.run(t)
+}
+
+func TestIdentityOutlivesTheServiceItHosts(t *testing.T) {
+	newIdentity := func() *v1alpha1.Identity {
+		return &v1alpha1.Identity{
+			ObjectMeta: meta1("web-server"),
+			Spec: v1alpha1.IdentitySpec{ForProvider: v1alpha1.IdentityParameters{
+				Name:                "web-server",
+				ServiceHostingCosts: map[string]int32{"web": 100},
+			}},
+		}
+	}
+
+	// Ziti keeps the hosting settings for a service that is deleted and then
+	// refuses to delete the identity, answering that the service is not found.
+	cases := map[string]struct {
+		reason  string
+		kind    generic.Kind[*v1alpha1.Identity]
+		wantErr bool
+	}{
+		"HostingSettingsAreDroppedFirst": {
+			reason: "The identity kinds drop the hosting settings before the deletion.",
+			kind:   identity.Kind,
+		},
+		"NotFoundIsNotTakenForDeleted": {
+			reason: "An entity that is still there is not deleted, whatever Ziti reports as not found.",
+			kind: func() generic.Kind[*v1alpha1.Identity] {
+				k := identity.Kind
+				k.BeforeDelete = nil
+				return k
+			}(),
+			wantErr: true,
+		},
+	}
+
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			srv := fake.NewServer()
+			defer srv.Close()
+			srv.Put("services", map[string]any{"id": "svc-1", "name": "web"})
+
+			api, err := srv.Client()
+			if err != nil {
+				t.Fatalf("cannot create client: %v", err)
+			}
+
+			ctx := context.Background()
+			e := generic.NewExternalClient(tc.kind, api)
+			mg := newIdentity()
+			if _, err := e.Create(ctx, mg); err != nil {
+				t.Fatalf("Create(...): %v", err)
+			}
+			srv.Delete("services", "svc-1")
+
+			_, err = e.Delete(ctx, mg)
+			if (err != nil) != tc.wantErr {
+				t.Fatalf("\n%s\nDelete(...): want error %t, got %v", tc.reason, tc.wantErr, err)
+			}
+			if gone := srv.Entity("identities", meta.GetExternalName(mg)) == nil; gone == tc.wantErr {
+				t.Errorf("\n%s\nidentity gone after Delete(...): want %t, got %t", tc.reason, !tc.wantErr, gone)
+			}
+		})
+	}
+}
+
+func TestIdentityCA(t *testing.T) {
+	lifecycle[*v1alpha1.IdentityCA]{
+		kind: identityca.Kind,
+		seed: func(srv *fake.Server) {
+			srv.Put("cas", map[string]any{"id": "ca-1", "name": "devices"})
+		},
+		mg: &v1alpha1.IdentityCA{
+			ObjectMeta: meta1("sensor"),
+			Spec: v1alpha1.IdentityCASpec{ForProvider: v1alpha1.IdentityCAParameters{
+				IdentityParameters: v1alpha1.IdentityParameters{Name: "sensor", Type: "Device"},
+				Ottca:              "devices",
+			}},
+		},
+		created: identityBody(map[string]any{
+			"name":       "sensor",
+			"type":       "Device",
+			"enrollment": pendingEnrollment("ottca", "sensor"),
+		}),
+		update: func(mg *v1alpha1.IdentityCA) {
+			mg.Spec.ForProvider.RoleAttributes = []string{"sensors"}
+		},
+		updated: identityBody(map[string]any{
+			"name":           "sensor",
+			"type":           "Device",
+			"roleAttributes": []any{"sensors"},
+			"enrollment":     pendingEnrollment("ottca", "sensor"),
+		}),
+		details: managed.ConnectionDetails{identity.ConnectionKeyEnrollmentToken: []byte("jwt-for-sensor")},
+	}.run(t)
+}
+
+func TestIdentityCAWaitsForItsCertificateAuthority(t *testing.T) {
+	srv := fake.NewServer()
+	defer srv.Close()
+
+	api, err := srv.Client()
+	if err != nil {
+		t.Fatalf("cannot create client: %v", err)
+	}
+
+	mg := &v1alpha1.IdentityCA{
+		ObjectMeta: meta1("sensor"),
+		Spec: v1alpha1.IdentityCASpec{ForProvider: v1alpha1.IdentityCAParameters{
+			IdentityParameters: v1alpha1.IdentityParameters{Name: "sensor"},
+			Ottca:              "devices",
+		}},
+	}
+
+	_, err = generic.NewExternalClient(identityca.Kind, api).Create(context.Background(), mg)
+	if err == nil || !strings.Contains(err.Error(), `no entity named "devices" in cas`) {
+		t.Errorf("Create(...): want an error about the missing certificate authority, got %v", err)
+	}
+	if got := srv.Len("identities"); got != 0 {
+		t.Errorf("want no identity to be created, got %d", got)
+	}
+}
+
+func TestIdentityUPDB(t *testing.T) {
+	lifecycle[*v1alpha1.IdentityUPDB]{
+		kind: identityupdb.Kind,
+		mg: &v1alpha1.IdentityUPDB{
+			ObjectMeta: meta1("operator"),
+			Spec: v1alpha1.IdentityUPDBSpec{ForProvider: v1alpha1.IdentityUPDBParameters{
+				IdentityParameters: v1alpha1.IdentityParameters{Name: "operator", Type: "User", IsAdmin: ptr.To(true)},
+				UpdbUsername:       "operator",
+			}},
+		},
+		created: identityBody(map[string]any{
+			"name":       "operator",
+			"type":       "User",
+			"isAdmin":    true,
+			"enrollment": pendingEnrollment("updb", "operator"),
+		}),
+		update: func(mg *v1alpha1.IdentityUPDB) {
+			mg.Spec.ForProvider.IsAdmin = ptr.To(false)
+			mg.Spec.ForProvider.Tags = map[string]string{"team": "ops"}
+		},
+		updated: identityBody(map[string]any{
+			"name":       "operator",
+			"type":       "User",
+			"tags":       map[string]any{"team": "ops"},
+			"enrollment": pendingEnrollment("updb", "operator"),
+		}),
+		details: managed.ConnectionDetails{identity.ConnectionKeyEnrollmentToken: []byte("jwt-for-operator")},
+	}.run(t)
+}
+
+func TestIdentityNone(t *testing.T) {
+	lifecycle[*v1alpha1.IdentityNone]{
+		kind: identitynone.Kind,
+		mg: &v1alpha1.IdentityNone{
+			ObjectMeta: meta1("sso-user"),
+			Spec: v1alpha1.IdentityNoneSpec{ForProvider: v1alpha1.IdentityParameters{
+				Name:       "sso-user",
+				Type:       "User",
+				ExternalID: ptr.To("user@example.com"),
+			}},
+		},
+		created: identityBody(map[string]any{
+			"name":       "sso-user",
+			"type":       "User",
+			"externalId": "user@example.com",
+		}),
+		update: func(mg *v1alpha1.IdentityNone) {
+			mg.Spec.ForProvider.ExternalID = ptr.To("user@example.org")
+		},
+		updated: identityBody(map[string]any{
+			"name":       "sso-user",
+			"type":       "User",
+			"externalId": "user@example.org",
+		}),
 	}.run(t)
 }
 
@@ -479,6 +747,21 @@ func TestIdentityStatus(t *testing.T) {
 			entity: `{"id": "idn-1", "name": "web-client", "typeId": "Default", "enrollment": {},
 				"authenticators": {"cert": {"fingerprint": "abc"}}, "tags": {"managed": true}}`,
 			want: v1alpha1.IdentityObservation{ID: "idn-1", Name: "web-client", TypeID: "Default", Enrolled: true, Tags: map[string]string{"managed": "true"}},
+		},
+		"PendingPasswordEnrollment": {
+			entity: `{"id": "idn-1", "name": "web-client", "typeId": "User", "authenticators": {},
+				"enrollment": {"updb": {"jwt": "token", "expiresAt": "2030-01-01T00:00:00.000Z"}}}`,
+			want: v1alpha1.IdentityObservation{ID: "idn-1", Name: "web-client", TypeID: "User", EnrollmentExpiresAt: "2030-01-01T00:00:00.000Z"},
+		},
+		"EnrolledWithPassword": {
+			entity: `{"id": "idn-1", "name": "web-client", "typeId": "User", "enrollment": {}, "authPolicyId": "default",
+				"authenticators": {"updb": {"username": "web-client"}}, "appData": {"seats": 4},
+				"defaultHostingCost": 10, "defaultHostingPrecedence": "required", "serviceHostingCosts": {"svc-1": 100}}`,
+			want: v1alpha1.IdentityObservation{
+				ID: "idn-1", Name: "web-client", TypeID: "User", Enrolled: true, AuthPolicyID: "default",
+				AppData: map[string]string{"seats": "4"}, DefaultHostingCost: 10, DefaultHostingPrecedence: "required",
+				ServiceHostingCosts: map[string]int32{"svc-1": 100},
+			},
 		},
 	}
 

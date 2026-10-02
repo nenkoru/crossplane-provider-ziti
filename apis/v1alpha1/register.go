@@ -74,6 +74,13 @@ var (
 	ConfigHostV1GroupVersionKind = SchemeGroupVersion.WithKind(ConfigHostV1Kind)
 )
 
+// ConfigHostV2 type metadata.
+var (
+	ConfigHostV2Kind             = reflect.TypeOf(ConfigHostV2{}).Name()
+	ConfigHostV2GroupKind        = schema.GroupKind{Group: Group, Kind: ConfigHostV2Kind}.String()
+	ConfigHostV2GroupVersionKind = SchemeGroupVersion.WithKind(ConfigHostV2Kind)
+)
+
 // ConfigInterceptV1 type metadata.
 var (
 	ConfigInterceptV1Kind             = reflect.TypeOf(ConfigInterceptV1{}).Name()
@@ -109,6 +116,27 @@ var (
 	IdentityGroupVersionKind = SchemeGroupVersion.WithKind(IdentityKind)
 )
 
+// IdentityCA type metadata.
+var (
+	IdentityCAKind             = reflect.TypeOf(IdentityCA{}).Name()
+	IdentityCAGroupKind        = schema.GroupKind{Group: Group, Kind: IdentityCAKind}.String()
+	IdentityCAGroupVersionKind = SchemeGroupVersion.WithKind(IdentityCAKind)
+)
+
+// IdentityUPDB type metadata.
+var (
+	IdentityUPDBKind             = reflect.TypeOf(IdentityUPDB{}).Name()
+	IdentityUPDBGroupKind        = schema.GroupKind{Group: Group, Kind: IdentityUPDBKind}.String()
+	IdentityUPDBGroupVersionKind = SchemeGroupVersion.WithKind(IdentityUPDBKind)
+)
+
+// IdentityNone type metadata.
+var (
+	IdentityNoneKind             = reflect.TypeOf(IdentityNone{}).Name()
+	IdentityNoneGroupKind        = schema.GroupKind{Group: Group, Kind: IdentityNoneKind}.String()
+	IdentityNoneGroupVersionKind = SchemeGroupVersion.WithKind(IdentityNoneKind)
+)
+
 // PostureCheckOS type metadata.
 var (
 	PostureCheckOSKind             = reflect.TypeOf(PostureCheckOS{}).Name()
@@ -137,11 +165,15 @@ func init() {
 	SchemeBuilder.Register(&Service{}, &ServiceList{})
 	SchemeBuilder.Register(&EdgeRouter{}, &EdgeRouterList{})
 	SchemeBuilder.Register(&ConfigHostV1{}, &ConfigHostV1List{})
+	SchemeBuilder.Register(&ConfigHostV2{}, &ConfigHostV2List{})
 	SchemeBuilder.Register(&ConfigInterceptV1{}, &ConfigInterceptV1List{})
 	SchemeBuilder.Register(&ServicePolicy{}, &ServicePolicyList{})
 	SchemeBuilder.Register(&ServiceEdgeRouterPolicy{}, &ServiceEdgeRouterPolicyList{})
 	SchemeBuilder.Register(&EdgeRouterPolicy{}, &EdgeRouterPolicyList{})
 	SchemeBuilder.Register(&Identity{}, &IdentityList{})
+	SchemeBuilder.Register(&IdentityCA{}, &IdentityCAList{})
+	SchemeBuilder.Register(&IdentityUPDB{}, &IdentityUPDBList{})
+	SchemeBuilder.Register(&IdentityNone{}, &IdentityNoneList{})
 	SchemeBuilder.Register(&PostureCheckOS{}, &PostureCheckOSList{})
 	SchemeBuilder.Register(&PostureCheckMFA{}, &PostureCheckMFAList{})
 	SchemeBuilder.Register(&AuthPolicy{}, &AuthPolicyList{})

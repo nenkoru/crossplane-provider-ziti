@@ -4,7 +4,7 @@ kind: CustomResourceDefinition
 metadata:
   annotations:
     controller-gen.kubebuilder.io/version: v0.20.0
-  name: identities.ziti.crossplane.io
+  name: identityupdbs.ziti.crossplane.io
 spec:
   group: ziti.crossplane.io
   names:
@@ -12,10 +12,10 @@ spec:
     - crossplane
     - managed
     - ziti
-    kind: Identity
-    listKind: IdentityList
-    plural: identities
-    singular: identity
+    kind: IdentityUPDB
+    listKind: IdentityUPDBList
+    plural: identityupdbs
+    singular: identityupdb
   scope: Namespaced
   versions:
   - additionalPrinterColumns:
@@ -35,9 +35,10 @@ spec:
     schema:
       openAPIV3Schema:
         description: |-
-          Identity is a Ziti identity with one-time token (OTT) enrollment. The
-          enrollment token is published to the connection secret under the key
-          enrollmentToken until the identity enrolls.
+          IdentityUPDB is a Ziti identity that authenticates with a username and a
+          password (UPDB). It enrolls by setting its password with the enrollment
+          token, which is published to the connection secret under the key
+          enrollmentToken until then.
         properties:
           apiVersion:
             description: |-
@@ -57,12 +58,12 @@ spec:
           metadata:
             type: object
           spec:
-            description: IdentitySpec defines the desired state of an Identity.
+            description: IdentityUPDBSpec defines the desired state of an IdentityUPDB.
             properties:
               forProvider:
                 description: |-
-                  IdentityParameters define the desired state of a Ziti Identity. All
-                  identity kinds share them; the kinds differ in how the identity enrolls.
+                  IdentityUPDBParameters define the desired state of a Ziti identity that
+                  enrolls by choosing a password.
                 properties:
                   appData:
                     additionalProperties:
@@ -141,8 +142,18 @@ spec:
                     x-kubernetes-validations:
                     - message: type cannot be changed after creation
                       rule: self == oldSelf
+                  updbUsername:
+                    description: |-
+                      UpdbUsername is the username the identity authenticates with. It
+                      cannot be changed after creation.
+                    minLength: 1
+                    type: string
+                    x-kubernetes-validations:
+                    - message: updbUsername cannot be changed after creation
+                      rule: self == oldSelf
                 required:
                 - name
+                - updbUsername
                 type: object
               managementPolicies:
                 default:
@@ -203,7 +214,7 @@ spec:
             - forProvider
             type: object
           status:
-            description: IdentityStatus defines the observed state of an Identity.
+            description: IdentityUPDBStatus defines the observed state of an IdentityUPDB.
             properties:
               atProvider:
                 description: IdentityObservation keeps the observed state of an identity
