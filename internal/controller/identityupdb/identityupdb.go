@@ -45,4 +45,10 @@ var Kind = generic.Kind[*v1alpha1.IdentityUPDB]{
 		return identity.Observe(raw, &mg.Status.AtProvider)
 	},
 	ConnectionDetails: identity.ConnectionDetails,
+	Repair: func(api *client.Client, mg *v1alpha1.IdentityUPDB, raw json.RawMessage) (string, func(context.Context) error, error) {
+		p := mg.Spec.ForProvider
+		return identity.RenewEnrollment(api, raw, p.IdentityParameters, "updb", func(context.Context) (map[string]any, error) {
+			return map[string]any{"username": p.UpdbUsername}, nil
+		})
+	},
 }

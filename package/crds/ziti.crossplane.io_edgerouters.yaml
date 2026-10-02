@@ -162,6 +162,10 @@ spec:
                     type: integer
                   createdAt:
                     type: string
+                  enrollmentExpiresAt:
+                    description: EnrollmentExpiresAt is when the enrollment token
+                      expires.
+                    type: string
                   id:
                     type: string
                   isTunnelerEnabled:

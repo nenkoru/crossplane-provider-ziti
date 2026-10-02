@@ -113,6 +113,14 @@ ziti_post() {
 		-d "$2" "${ZITI_API}/$1" | jq -er '.data.id'
 }
 
+# ziti_refresh <enrollment id> <seconds> has Ziti give an enrollment a new
+# token behind the provider's back, one that expires so many seconds from now.
+ziti_refresh() {
+	curl -sk --fail -X POST -H "zt-session: ${ZITI_TOKEN}" -H 'Content-Type: application/json' \
+		-d "$(jq -n --argjson seconds "$2" '{expiresAt: (now + $seconds | todate)}')" \
+		"${ZITI_API}/enrollments/$1/refresh" >/dev/null
+}
+
 # ziti_delete <collection> <id> deletes an entity behind the provider's back.
 ziti_delete() {
 	curl -sk --fail -X DELETE -H "zt-session: ${ZITI_TOKEN}" "${ZITI_API}/$1/$2" >/dev/null
@@ -220,6 +228,53 @@ check_token() {
 	*.*.*) ok "secret/${secret}: enrollment token is a JWT" ;;
 	*) fail "secret/${secret}: enrollment token is not a JWT" ;;
 	esac
+}
+
+# token_digest <secret> prints a digest of the enrollment token in the
+# connection secret. It tells tokens apart without showing them.
+token_digest() {
+	kubectl get secret "$1" -o jsonpath='{.data.enrollmentToken}' | base64 -d | openssl dgst -sha256 -r | cut -d' ' -f1
+}
+
+# token_is_current <secret> <collection> <id> <jq path of the token> succeeds
+# if the connection secret holds the enrollment token Ziti reports.
+token_is_current() {
+	local published reported
+	published="$(kubectl get secret "$1" -o jsonpath='{.data.enrollmentToken}' | base64 -d)" || return 1
+	reported="$(ziti_get "$2" "$3" | jq -er "$4")" || return 1
+	[ "${published}" = "${reported}" ]
+}
+
+# expiry_is_current <plural> <name> <collection> <jq path of the expiry>
+# succeeds if the status of the managed resource says when the enrollment
+# token Ziti reports expires.
+expiry_is_current() {
+	local shown reported
+	shown="$(kubectl get "$1.${GROUP}" "$2" -o jsonpath='{.status.atProvider.enrollmentExpiresAt}')" || return 1
+	reported="$(ziti_get "$3" "$(mr_id "$1" "$2")" | jq -er "$4")" || return 1
+	[ "${shown}" = "${reported}" ]
+}
+
+# expires_in <collection> <id> <jq path of the expiry> <min> <max> succeeds
+# if the time lies more than min and at most max seconds ahead.
+expires_in() {
+	ziti_get "$1" "$2" | jq -e --argjson min "$4" --argjson max "$5" \
+		"($3 | sub(\"[.][0-9]+Z\$\"; \"Z\") | fromdate) - now | . > \$min and . <= \$max"
+}
+
+# expect_renewed <plural> <name> <collection> <jq path of the token> <jq path
+# of the expiry> <digest of the old token> checks that the connection secret
+# <name>-enrollment holds a new enrollment token, the one Ziti reports, and
+# that the status says when it expires.
+expect_renewed() {
+	local plural="$1" name="$2" collection="$3" token="$4" expiry="$5" old="$6" secret="$2-enrollment" id digest
+	id="$(mr_id "${plural}" "${name}")"
+	eventually "secret/${secret}: follows the token Ziti reports" token_is_current "${secret}" "${collection}" "${id}" "${token}"
+	check_token "${secret}" "${collection}" "${id}" "${token}"
+	digest="$(token_digest "${secret}")" || fail "cannot read secret/${secret}"
+	[ "${digest}" != "${old}" ] || fail "secret/${secret}: still holds the old enrollment token"
+	ok "secret/${secret}: the enrollment token is a new one"
+	eventually "${plural}/${name}: status says when the new token expires" expiry_is_current "${plural}" "${name}" "${collection}" "${expiry}"
 }
 
 # stamps <collection> <id>... prints the last update time of each entity.
@@ -764,12 +819,202 @@ test_authentication() {
 	expect_gone "identity is gone" identities sensor
 }
 
+test_renewal() {
+	step "Creating identities and edge routers to take the enrollment from"
+	local ca
+	openssl req -x509 -newkey rsa:2048 -nodes -days 1 -subj '/CN=provider-ziti e2e renewal CA' \
+		-keyout "${WORK}/renewal-ca.key" -out "${WORK}/renewal-ca.crt" 2>/dev/null || fail "cannot create a CA certificate"
+	ca="$(ziti_post cas "$(jq -n --rawfile pem "${WORK}/renewal-ca.crt" \
+		'{name: "e2e-renewal-ca", certPem: $pem, isAuthEnabled: true, isAutoCaEnrollmentEnabled: false, isOttCaEnrollmentEnabled: true, identityRoles: []}')")" ||
+		fail "cannot create a certificate authority in Ziti"
+
+	# declare_resource <kind> <name> [setting] creates a managed resource that
+	# writes its enrollment token to the secret <name>-enrollment.
+	declare_resource() {
+		kubectl apply -f - <<EOF
+apiVersion: ${GROUP}/v1alpha1
+kind: $1
+metadata:
+  name: $2
+  namespace: default
+spec:
+  providerConfigRef:
+    kind: ProviderConfig
+    name: default
+  writeConnectionSecretToRef:
+    name: $2-enrollment
+  forProvider:
+    name: $2
+    ${3:-}
+EOF
+	}
+	# Only a token that replaces another one is valid for the 10 minutes.
+	declare_resource Identity e2e-expired 'enrollmentDuration: 10m'
+	declare_resource Identity e2e-deleted
+	declare_resource Identity e2e-enrolled
+	declare_resource IdentityCA e2e-deleted-ca 'ottca: e2e-renewal-ca'
+	declare_resource IdentityUPDB e2e-deleted-updb 'updbUsername: e2e-deleted-updb'
+	declare_resource EdgeRouter e2e-deleted-router
+	declare_resource EdgeRouter e2e-enrolled-router
+	local resources=(
+		"identities.${GROUP}/e2e-expired" "identities.${GROUP}/e2e-deleted" "identities.${GROUP}/e2e-enrolled"
+		"identitycas.${GROUP}/e2e-deleted-ca" "identityupdbs.${GROUP}/e2e-deleted-updb"
+		"edgerouters.${GROUP}/e2e-deleted-router" "edgerouters.${GROUP}/e2e-enrolled-router"
+	)
+	kubectl wait --for=condition=Ready --timeout="${TIMEOUT}s" "${resources[@]}"
+
+	local expired deleted with_ca with_password router enrolled enrolled_router
+	expired="$(mr_id identities e2e-expired)"
+	deleted="$(mr_id identities e2e-deleted)"
+	with_ca="$(mr_id identitycas e2e-deleted-ca)"
+	with_password="$(mr_id identityupdbs e2e-deleted-updb)"
+	router="$(mr_id edgerouters e2e-deleted-router)"
+	enrolled="$(mr_id identities e2e-enrolled)"
+	enrolled_router="$(mr_id edgerouters e2e-enrolled-router)"
+	check_token e2e-expired-enrollment identities "${expired}" '.enrollment.ott.jwt'
+	check_token e2e-deleted-enrollment identities "${deleted}" '.enrollment.ott.jwt'
+	check_token e2e-deleted-ca-enrollment identities "${with_ca}" '.enrollment.ottca.jwt'
+	check_token e2e-deleted-updb-enrollment identities "${with_password}" '.enrollment.updb.jwt'
+	check_token e2e-deleted-router-enrollment edge-routers "${router}" '.enrollmentJwt'
+	check_token e2e-enrolled-enrollment identities "${enrolled}" '.enrollment.ott.jwt'
+	check_token e2e-enrolled-router-enrollment edge-routers "${enrolled_router}" '.enrollmentJwt'
+	eventually "edgerouters/e2e-deleted-router: status says when the token expires" \
+		expiry_is_current edgerouters e2e-deleted-router edge-routers '.enrollmentExpiresAt'
+
+	step "An enrollment token that expired is replaced"
+	local old enrollment
+	old="$(token_digest e2e-expired-enrollment)" || fail "cannot read secret/e2e-expired-enrollment"
+	enrollment="$(ziti_get identities "${expired}" | jq -er '.enrollment.ott.id')" || fail "e2e-expired has no enrollment"
+	# The first token is valid for hours. Ziti is asked for one that expires
+	# in a moment instead.
+	ziti_refresh "${enrollment}" 5 || fail "cannot refresh the enrollment of e2e-expired in Ziti"
+	expires_in identities "${expired}" '.enrollment.ott.expiresAt' -60 10 >/dev/null || fail "could not make the enrollment of e2e-expired expire"
+	eventually "identities/e2e-expired: the enrollment is valid again, for the 10 minutes the resource asks for" \
+		expires_in identities "${expired}" '.enrollment.ott.expiresAt' 300 600
+	expect "identities/e2e-expired: the enrollment is the one that expired" \
+		"$(ziti_get identities "${expired}" | jq -r '.enrollment.ott.id')" "${enrollment}"
+	expect_renewed identities e2e-expired identities '.enrollment.ott.jwt' '.enrollment.ott.expiresAt' "${old}"
+
+	step "An enrollment that is gone is created anew"
+	# recreated <plural> <name> <method> deletes the enrollment of an identity
+	# in Ziti and checks that the identity gets another one.
+	recreated() {
+		local plural="$1" name="$2" method="$3" id old enrollment
+		id="$(mr_id "${plural}" "${name}")"
+		old="$(token_digest "${name}-enrollment")" || fail "cannot read secret/${name}-enrollment"
+		enrollment="$(ziti_get identities "${id}" | jq -er ".enrollment.${method}.id")" || fail "${name} has no enrollment"
+		ziti_delete enrollments "${enrollment}" || fail "cannot delete the enrollment of ${name} in Ziti"
+		eventually "${plural}/${name}: has an enrollment again" entity_matches identities "${id}" \
+			".enrollment.${method}.id != null and .enrollment.${method}.id != \"${enrollment}\""
+		expect_renewed "${plural}" "${name}" identities ".enrollment.${method}.jwt" ".enrollment.${method}.expiresAt" "${old}"
+	}
+	recreated identities e2e-deleted ott
+	recreated identitycas e2e-deleted-ca ottca
+	recreated identityupdbs e2e-deleted-updb updb
+	expires_in identities "${deleted}" '.enrollment.ott.expiresAt' 10200 10800 >/dev/null ||
+		fail "the new enrollment of e2e-deleted is not valid for 180 minutes"
+	ok "identities/e2e-deleted: the new token is valid for 180 minutes"
+	entity_matches identities "${with_ca}" ".enrollment.ottca.caId == \"${ca}\" and (.enrollment | has(\"ott\") | not)" >/dev/null ||
+		fail "the new enrollment of e2e-deleted-ca is not one for its certificate authority"
+	ok "identitycas/e2e-deleted-ca: the new enrollment is one for its certificate authority"
+	entity_matches identities "${with_password}" '(.enrollment | has("updb")) and (.enrollment | has("ott") | not)' >/dev/null ||
+		fail "the new enrollment of e2e-deleted-updb is not one for a password"
+	ok "identityupdbs/e2e-deleted-updb: the new enrollment is one for a password"
+
+	step "An edge router whose enrollment is gone is enrolled anew"
+	local old_expiry
+	old="$(token_digest e2e-deleted-router-enrollment)" || fail "cannot read secret/e2e-deleted-router-enrollment"
+	old_expiry="$(ziti_get edge-routers "${router}" | jq -er '.enrollmentExpiresAt')" || fail "e2e-deleted-router has no enrollment"
+	enrollment="$(curl -sk --fail -H "zt-session: ${ZITI_TOKEN}" --get --data-urlencode "filter=edgeRouter=\"${router}\"" \
+		"${ZITI_API}/enrollments" | jq -er '.data[0].id')" || fail "cannot find the enrollment of e2e-deleted-router"
+	ziti_delete enrollments "${enrollment}" || fail "cannot delete the enrollment of e2e-deleted-router in Ziti"
+	eventually "edgerouters/e2e-deleted-router: has an enrollment again" entity_matches edge-routers "${router}" \
+		".isVerified == false and .enrollmentJwt != null and .enrollmentExpiresAt != \"${old_expiry}\""
+	expect_renewed edgerouters e2e-deleted-router edge-routers '.enrollmentJwt' '.enrollmentExpiresAt' "${old}"
+
+	step "A new token can be used, and what has enrolled is left alone"
+	local token
+	# Ziti only shows the username of a password enrollment once it is used.
+	token="$(ziti_get identities "${with_password}" | jq -er '.enrollment.updb.token')" || fail "e2e-deleted-updb has no enrollment"
+	curl -sk --fail -X POST -H 'Content-Type: application/json' -H 'Accept: application/json' \
+		-d "$(jq -n --arg password "$(openssl rand -hex 16)" '{password: $password}')" \
+		"${ZITI_URL}/edge/client/v1/enroll?method=updb&token=${token}" >/dev/null ||
+		fail "cannot enroll e2e-deleted-updb with its new token"
+	entity_matches identities "${with_password}" '.authenticators.updb.username == "e2e-deleted-updb" and ([.enrollment[]?] | length) == 0' >/dev/null ||
+		fail "e2e-deleted-updb has not enrolled with the username of its resource"
+	ok "identityupdbs/e2e-deleted-updb: enrolled with its new token and the username of its resource"
+
+	# The identity enrolls like a Ziti SDK does: with a certificate request
+	# and the token its enrollment JWT stands for.
+	openssl req -new -newkey rsa:2048 -nodes -subj '/CN=e2e-enrolled' \
+		-keyout "${WORK}/enrolled.key" -out "${WORK}/enrolled.csr" 2>/dev/null || fail "cannot create a certificate request"
+	token="$(ziti_get identities "${enrolled}" | jq -er '.enrollment.ott.token')" || fail "e2e-enrolled has no enrollment"
+	curl -sk --fail -X POST -H 'Content-Type: application/x-pem-file' -H 'Accept: application/json' \
+		--data-binary "@${WORK}/enrolled.csr" "${ZITI_URL}/edge/client/v1/enroll?method=ott&token=${token}" >/dev/null ||
+		fail "cannot enroll e2e-enrolled"
+	# An edge router asks for two certificates. The one it connects to the
+	# controller with must name its ID.
+	openssl req -new -newkey rsa:2048 -nodes -subj "/CN=${enrolled_router}" \
+		-keyout "${WORK}/enrolled-router.key" -out "${WORK}/enrolled-router.csr" 2>/dev/null || fail "cannot create a certificate request"
+	openssl req -new -key "${WORK}/enrolled-router.key" -subj '/CN=e2e-enrolled-router' \
+		-out "${WORK}/enrolled-router-server.csr" 2>/dev/null || fail "cannot create a certificate request"
+	token="$(ziti_get edge-routers "${enrolled_router}" | jq -er '.enrollmentToken')" || fail "e2e-enrolled-router has no enrollment"
+	curl -sk --fail -X POST -H 'Content-Type: application/json' -H 'Accept: application/json' \
+		-d "$(jq -n --rawfile client "${WORK}/enrolled-router.csr" --rawfile server "${WORK}/enrolled-router-server.csr" \
+			'{certCsr: $client, serverCertCsr: $server}')" \
+		"${ZITI_URL}/edge/client/v1/enroll?method=erott&token=${token}" >/dev/null ||
+		fail "cannot enroll e2e-enrolled-router"
+
+	# has_enrolled succeeds if both have enrolled and have no enrollment.
+	has_enrolled() {
+		entity_matches identities "${enrolled}" '.authenticators.cert.id != null and ([.enrollment[]?] | length) == 0' &&
+			entity_matches edge-routers "${enrolled_router}" '.isVerified == true and .fingerprint != "" and .enrollmentJwt == null'
+	}
+	has_enrolled >/dev/null || fail "e2e-enrolled or e2e-enrolled-router has not enrolled"
+	ok "identities/e2e-enrolled and edgerouters/e2e-enrolled-router: enrolled with their tokens"
+	reports_enrolled() {
+		[ "$(kubectl get "identities.${GROUP}" e2e-enrolled -o jsonpath='{.status.atProvider.enrolled}')" = "true" ] &&
+			[ "$(kubectl get "edgerouters.${GROUP}" e2e-enrolled-router -o jsonpath='{.status.atProvider.isVerified}')" = "true" ]
+	}
+	eventually "identities/e2e-enrolled and edgerouters/e2e-enrolled-router: report that they have enrolled" reports_enrolled
+
+	# The certificates of the enrolled entities, every enrollment without
+	# its token, and the last update of every entity.
+	enrollment_stamps() {
+		ziti_get identities "${enrolled}" | jq -r '"\(.id) \(.updatedAt) \(.authenticators.cert.fingerprint) \([.enrollment[] | .id, .expiresAt])"'
+		ziti_get edge-routers "${enrolled_router}" | jq -r '"\(.id) \(.updatedAt) \(.isVerified) \(.fingerprint) \(.enrollmentExpiresAt)"'
+		local id
+		for id in "${expired}" "${deleted}" "${with_ca}" "${with_password}"; do
+			ziti_get identities "${id}" | jq -r '"\(.id) \(.updatedAt) \([.enrollment[] | .id, .expiresAt])"'
+		done
+		ziti_get edge-routers "${router}" | jq -r '"\(.id) \(.updatedAt) \(.isVerified) \(.enrollmentExpiresAt)"'
+	}
+	expect_settled "enrolled entities are left alone and no token is replaced twice" enrollment_stamps
+	has_enrolled >/dev/null || fail "e2e-enrolled or e2e-enrolled-router was given an enrollment after it had enrolled"
+	ok "identities/e2e-enrolled and edgerouters/e2e-enrolled-router: have no enrollment and keep their certificates"
+	local resource
+	for resource in "${resources[@]}"; do
+		expect "${resource}: is in sync" "$(kubectl get "${resource}" -o jsonpath='{.status.conditions[?(@.type=="Synced")].status}')" "True"
+	done
+
+	step "Deleting the identities and edge routers"
+	kubectl delete --wait --timeout="${TIMEOUT}s" "${resources[@]}"
+	local name
+	for name in e2e-expired e2e-deleted e2e-enrolled e2e-deleted-ca e2e-deleted-updb; do
+		expect_gone "identity ${name} is gone" identities "${name}"
+	done
+	expect_gone "edge router e2e-deleted-router is gone" edge-routers e2e-deleted-router
+	expect_gone "edge router e2e-enrolled-router is gone" edge-routers e2e-enrolled-router
+	ziti_delete cas "${ca}" || fail "cannot delete the certificate authority"
+}
+
 run_tests() {
 	ziti_login
 	test_core
 	if [ "${E2E_SKIP_EXTENDED:-false}" != "true" ]; then
 		test_extended
 		test_authentication
+		test_renewal
 	fi
 	step "All end-to-end checks passed"
 }
