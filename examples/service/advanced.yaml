@@ -1,0 +1,137 @@
+# Advanced Service with Full Configuration
+# Demonstrates all features: host config with health checks, intercept config with dial options
+
+apiVersion: ziti.crossplane.io/v1alpha1
+kind: ConfigHostV1
+metadata:
+  name: advanced-host
+spec:
+  providerConfigRef:
+    kind: ProviderConfig
+    name: default
+  forProvider:
+    name: advanced-host
+    address: api.internal
+    port: 8443
+    protocol: tcp
+    # Forward intercepted protocol/port/address to the host
+    forwardProtocol: true
+    forwardPort: true
+    forwardAddress: false
+    # Only allow these protocols
+    allowedProtocols:
+      - tcp
+      - udp
+    # Only allow these destination addresses
+    allowedAddresses:
+      - 10.0.0.0/8
+      - 192.168.0.0/16
+    # Only allow these source addresses
+    allowedSourceAddresses:
+      - 10.0.0.0/8
+    # Address translations for NAT
+    forwardAddressTranslations:
+      - from: 10.0.0.0/8
+        to: 192.168.0.0/16
+        prefixLength: 24
+    # Allowed port ranges
+    allowedPortRanges:
+      - low: 8000
+        high: 9000
+      - low: 3000
+        high: 3010
+    # Listen options for the terminator
+    listenOptions:
+      bindUsingEdgeIdentity: true
+      connectTimeout: "10s"
+      cost: 100
+      maxConnections: 1000
+      precedence: required
+    # Proxy for outbound connections
+    proxy:
+      address: proxy.internal:8080
+      type: http
+    # HTTP health checks
+    httpChecks:
+      - url: https://api.internal/health
+        method: GET
+        interval: "30s"
+        timeout: "10s"
+        expectStatus: 200
+        expectInBody: "OK"
+        actions:
+          - trigger: fail
+            action: "mark unhealthy"
+            duration: "60s"
+            consecutiveEvents: 3
+    # Port health checks
+    portChecks:
+      - address: api.internal:8443
+        interval: "15s"
+        timeout: "5s"
+        actions:
+          - trigger: fail
+            action: "mark unhealthy"
+            duration: "30s"
+            consecutiveEvents: 2
+  managementPolicies:
+    - "*"
+---
+apiVersion: ziti.crossplane.io/v1alpha1
+kind: ConfigInterceptV1
+metadata:
+  name: advanced-intercept
+spec:
+  providerConfigRef:
+    kind: ProviderConfig
+    name: default
+  forProvider:
+    name: advanced-intercept
+    addresses:
+      - api.example.com
+      - app.example.com
+    protocols:
+      - tcp
+      - udp
+    portRanges:
+      - low: 80
+        high: 80
+      - low: 443
+        high: 443
+    # Dial options for the intercepted connection
+    dialOptions:
+      connectTimeoutSeconds: 30
+      identity: my-dial-identity
+    # Source IP to use for outbound connections
+    sourceIp: 10.0.0.1
+    # Optional: match domain strategy (exact, prefix, suffix)
+    # matchDomainStrategy: exact
+  managementPolicies:
+    - "*"
+---
+apiVersion: ziti.crossplane.io/v1alpha1
+kind: Service
+metadata:
+  name: advanced-service
+spec:
+  providerConfigRef:
+    kind: ProviderConfig
+    name: default
+  forProvider:
+    name: advanced-service
+    encryptionRequired: true
+    maxIdleTimeMillis: 300000
+    terminatorStrategy: weighted
+    configs:
+      - advanced-host
+      - advanced-intercept
+    roleAttributes:
+      - role:api
+      - role:web
+      - role:admin
+    tags:
+      env: production
+      team: platform
+      cost-center: engineering
+  managementPolicies:
+    - "*"

@@ -1,0 +1,16 @@
+apiVersion: ziti.crossplane.io/v1alpha1
+kind: Service
+metadata:
+  name: service-ha
+  namespace: default
+spec:
+  forProvider:
+    encryptionRequired: true
+    name: service-ha
+    terminatorStrategy: ha
+  managementPolicies:
+    - '*'
+  providerConfigRef:
+    kind: ProviderConfig
+    name: default
+
