@@ -74,6 +74,13 @@ e2e.ziti:
 	@$(ROOT_DIR)/test/e2e/e2e.sh all || $(FAIL)
 	@$(OK) end-to-end tests passed
 
+# Until ci.yml gets a job of its own for the end-to-end test, the unit-tests
+# job runs it once the unit tests have passed.
+ifeq ($(GITHUB_JOB),unit-tests)
+test.run: e2e.ziti
+e2e.ziti: go.test.unit
+endif
+
 # Update the submodules, such as the common build scripts.
 submodules:
 	@git submodule sync
