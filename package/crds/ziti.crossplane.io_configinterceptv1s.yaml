@@ -79,9 +79,6 @@ spec:
                         description: Identity is the identity to use for dialing.
                         type: string
                     type: object
-                  matchDomainStrategy:
-                    description: MatchDomainStrategy is the domain matching strategy.
-                    type: string
                   name:
                     description: Name of the config.
                     type: string
@@ -109,11 +106,6 @@ spec:
                     items:
                       type: string
                     type: array
-                  roleAttributes:
-                    description: RoleAttributes is a list of role attributes.
-                    items:
-                      type: string
-                    type: array
                   sourceIp:
                     description: SourceIP is the source IP to use for the intercepted
                       connection.
@@ -126,6 +118,7 @@ spec:
                 required:
                 - addresses
                 - name
+                - portRanges
                 - protocols
                 type: object
               managementPolicies:
@@ -215,8 +208,6 @@ spec:
                     type: object
                   id:
                     type: string
-                  matchDomainStrategy:
-                    type: string
                   name:
                     type: string
                   portRanges:
@@ -237,10 +228,6 @@ spec:
                       type: object
                     type: array
                   protocols:
-                    items:
-                      type: string
-                    type: array
-                  roleAttributes:
                     items:
                       type: string
                     type: array

@@ -14,27 +14,39 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-// Package client provides a HTTP client for the Ziti Edge Controller API.
+// Package client provides a HTTP client for the Ziti Edge Management API.
 package client
 
 import (
 	"bytes"
+	"context"
 	"crypto/tls"
+	"crypto/x509"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
+	"strings"
 	"sync"
 	"time"
+)
 
-	"github.com/go-resty/resty/v2"
-	apierrors "k8s.io/apimachinery/pkg/api/errors"
-	"k8s.io/apimachinery/pkg/runtime/schema"
+const (
+	// managementPath is the path prefix of the Edge Management API.
+	managementPath = "/edge/management/v1"
+
+	// sessionHeader carries the API session token.
+	sessionHeader = "zt-session"
+
+	requestTimeout = 30 * time.Second
 )
 
 // Config holds the configuration for connecting to a Ziti Controller.
 type Config struct {
-	// Host is the Ziti Controller URL (e.g. https://controller.example.com:441).
+	// Host is the Ziti Controller URL (e.g. https://controller.example.com:1280).
+	// A trailing /edge/management/v1 is accepted and ignored.
 	Host string
 
 	// Username for password-based authentication.
@@ -43,299 +55,306 @@ type Config struct {
 	// Password for password-based authentication.
 	Password string
 
-	// Cert is the PEM-encoded client certificate for mTLS authentication.
+	// Cert is the PEM-encoded client certificate for certificate authentication.
 	Cert string
 
-	// Key is the PEM-encoded private key for mTLS authentication.
+	// Key is the PEM-encoded private key for certificate authentication.
 	Key string
 
-	// CA is the PEM-encoded CA certificate for server verification.
+	// CA is the PEM-encoded CA bundle used to verify the controller certificate.
+	// The system roots are used when it is empty.
 	CA string
+
+	// InsecureSkipTLSVerify disables verification of the controller certificate.
+	InsecureSkipTLSVerify bool
 }
 
-// ZitiClient is a client for the Ziti Edge Controller REST API.
-type ZitiClient struct {
-	host         string
-	httpClient   *http.Client
-	sessionToken string
-	mu           sync.RWMutex
-	tokenTime    time.Time
+// Client is a client for the Ziti Edge Management API. It authenticates
+// lazily and transparently re-authenticates when its API session expires.
+type Client struct {
+	base string
+	cfg  Config
+	http *http.Client
+
+	mu    sync.Mutex
+	token string
 }
 
-// New creates a new ZitiClient from the given config.
-func New(cfg Config) (*ZitiClient, error) {
+// New creates a Client from the supplied config. It does not contact the
+// controller; authentication happens on the first request.
+func New(cfg Config) (*Client, error) {
+	base, err := baseURL(cfg.Host)
+	if err != nil {
+		return nil, err
+	}
+
+	usesCert := cfg.Cert != "" || cfg.Key != ""
+	if !usesCert && (cfg.Username == "" || cfg.Password == "") {
+		return nil, errors.New("either username and password or cert and key are required")
+	}
+
 	tlsConfig := &tls.Config{
-		InsecureSkipVerify: true, // Ziti controllers self-sign by default
+		MinVersion:         tls.VersionTLS12,
+		InsecureSkipVerify: cfg.InsecureSkipTLSVerify, //nolint:gosec // Only disabled when the ProviderConfig explicitly asks for it.
 	}
 
 	if cfg.CA != "" {
-		tlsConfig.InsecureSkipVerify = false
-		// CA pool setup handled in auth if needed
+		pool := x509.NewCertPool()
+		if !pool.AppendCertsFromPEM([]byte(cfg.CA)) {
+			return nil, errors.New("ca does not contain a PEM-encoded certificate")
+		}
+		tlsConfig.RootCAs = pool
 	}
 
-	if cfg.Cert != "" && cfg.Key != "" {
-		// Will be set per-request in auth flow
+	if usesCert {
+		pair, err := tls.X509KeyPair([]byte(cfg.Cert), []byte(cfg.Key))
+		if err != nil {
+			return nil, fmt.Errorf("cannot parse client certificate and key: %w", err)
+		}
+		tlsConfig.Certificates = []tls.Certificate{pair}
 	}
 
-	return &ZitiClient{
-		host: cfg.Host,
-		httpClient: &http.Client{
-			Transport: &http.Transport{TLSClientConfig: tlsConfig},
-			Timeout:   30 * time.Second,
+	return &Client{
+		base: base,
+		cfg:  cfg,
+		http: &http.Client{
+			Transport: &http.Transport{
+				Proxy:           http.ProxyFromEnvironment,
+				TLSClientConfig: tlsConfig,
+			},
+			Timeout: requestTimeout,
 		},
 	}, nil
 }
 
-// Authenticate logs in to the Ziti Controller and stores the session token.
-func (c *ZitiClient) Authenticate(cfg Config) error {
-	var token string
-	var err error
-
-	if cfg.Cert != "" && cfg.Key != "" {
-		token, err = authenticateCert(cfg.Host, cfg.Cert, cfg.Key, cfg.CA)
-	} else {
-		token, err = authenticatePassword(cfg.Host, cfg.Username, cfg.Password)
-	}
-
+// baseURL validates the controller URL and returns the management API root.
+func baseURL(host string) (string, error) {
+	u, err := url.Parse(strings.TrimSpace(host))
 	if err != nil {
-		return err
+		return "", fmt.Errorf("invalid host URL: %w", err)
+	}
+	if (u.Scheme != "https" && u.Scheme != "http") || u.Host == "" {
+		return "", fmt.Errorf("host must be an http or https URL, got %q", host)
 	}
 
-	c.mu.Lock()
-	c.sessionToken = token
-	c.tokenTime = time.Now()
-	c.mu.Unlock()
-
-	return nil
+	path := strings.TrimSuffix(strings.TrimRight(u.Path, "/"), managementPath)
+	return u.Scheme + "://" + u.Host + strings.TrimRight(path, "/") + managementPath, nil
 }
 
-// getToken returns the current session token.
-func (c *ZitiClient) getToken() string {
-	c.mu.RLock()
-	defer c.mu.RUnlock()
-	return c.sessionToken
+// Get returns the entity with the supplied ID.
+func (c *Client) Get(ctx context.Context, collection, id string) (json.RawMessage, error) {
+	return c.do(ctx, http.MethodGet, entityPath(collection, id), nil)
 }
 
-// doRequest performs an HTTP request to the Ziti Controller API.
-func (c *ZitiClient) doRequest(method, path string, body interface{}) ([]byte, error) {
-	url := c.host + path
+// Find returns the entities of a collection matching the supplied filter.
+// Only the first page of results is returned.
+func (c *Client) Find(ctx context.Context, collection, filter string) ([]json.RawMessage, error) {
+	data, err := c.do(ctx, http.MethodGet, "/"+collection+"?filter="+url.QueryEscape(filter), nil)
+	if err != nil {
+		return nil, err
+	}
 
-	var reqBody io.Reader
+	var items []json.RawMessage
+	if err := json.Unmarshal(data, &items); err != nil {
+		return nil, fmt.Errorf("cannot parse %s list: %w", collection, err)
+	}
+	return items, nil
+}
+
+// Create creates an entity and returns its ID.
+func (c *Client) Create(ctx context.Context, collection string, body any) (string, error) {
+	data, err := c.do(ctx, http.MethodPost, "/"+collection, body)
+	if err != nil {
+		return "", err
+	}
+
+	var created struct {
+		ID string `json:"id"`
+	}
+	if err := json.Unmarshal(data, &created); err != nil {
+		return "", fmt.Errorf("cannot parse create response: %w", err)
+	}
+	if created.ID == "" {
+		return "", errors.New("create response does not contain an id")
+	}
+	return created.ID, nil
+}
+
+// Patch updates the supplied fields of an entity.
+func (c *Client) Patch(ctx context.Context, collection, id string, body any) error {
+	_, err := c.do(ctx, http.MethodPatch, entityPath(collection, id), body)
+	return err
+}
+
+// Delete deletes an entity.
+func (c *Client) Delete(ctx context.Context, collection, id string) error {
+	_, err := c.do(ctx, http.MethodDelete, entityPath(collection, id), nil)
+	return err
+}
+
+// ResolveID returns the ID of the entity with the supplied name. A value that
+// does not match a name is returned as is if an entity with that ID exists.
+func (c *Client) ResolveID(ctx context.Context, collection, nameOrID string) (string, error) {
+	items, err := c.Find(ctx, collection, "name="+quote(nameOrID))
+	if err != nil {
+		return "", err
+	}
+
+	if len(items) > 0 {
+		var item struct {
+			ID string `json:"id"`
+		}
+		if err := json.Unmarshal(items[0], &item); err != nil {
+			return "", fmt.Errorf("cannot parse %s list: %w", collection, err)
+		}
+		return item.ID, nil
+	}
+
+	if _, err := c.Get(ctx, collection, nameOrID); err != nil {
+		if IsNotFound(err) {
+			return "", fmt.Errorf("no entity named %q in %s", nameOrID, collection)
+		}
+		return "", err
+	}
+	return nameOrID, nil
+}
+
+func entityPath(collection, id string) string {
+	return "/" + collection + "/" + url.PathEscape(id)
+}
+
+// quote returns s as a string literal of the Ziti filter language.
+func quote(s string) string {
+	return `"` + strings.NewReplacer(`\`, `\\`, `"`, `\"`).Replace(s) + `"`
+}
+
+// do sends an authenticated request and returns the data field of the
+// response envelope. An expired API session is renewed once.
+func (c *Client) do(ctx context.Context, method, path string, body any) (json.RawMessage, error) {
+	var payload []byte
 	if body != nil {
-		data, err := json.Marshal(body)
-		if err != nil {
-			return nil, err
+		var err error
+		if payload, err = json.Marshal(body); err != nil {
+			return nil, fmt.Errorf("cannot encode request body: %w", err)
 		}
-		reqBody = bytes.NewReader(data)
 	}
 
-	req, err := http.NewRequest(method, url, reqBody)
+	token, err := c.session(ctx, "")
 	if err != nil {
 		return nil, err
 	}
 
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("zt-session", c.getToken())
+	data, err := c.send(ctx, method, path, token, payload)
+	if !isUnauthorized(err) {
+		return data, err
+	}
 
-	resp, err := c.httpClient.Do(req)
+	if token, err = c.session(ctx, token); err != nil {
+		return nil, err
+	}
+	return c.send(ctx, method, path, token, payload)
+}
+
+// session returns the API session token, authenticating if there is none or
+// if the current one is the supplied stale token.
+func (c *Client) session(ctx context.Context, stale string) (string, error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	if c.token != "" && c.token != stale {
+		return c.token, nil
+	}
+
+	token, err := c.authenticate(ctx)
+	if err != nil {
+		c.token = ""
+		return "", err
+	}
+
+	c.token = token
+	return token, nil
+}
+
+func (c *Client) authenticate(ctx context.Context) (string, error) {
+	method, credentials := "password", map[string]string{"username": c.cfg.Username, "password": c.cfg.Password}
+	if c.cfg.Cert != "" {
+		method, credentials = "cert", map[string]string{}
+	}
+
+	payload, err := json.Marshal(credentials)
+	if err != nil {
+		return "", fmt.Errorf("cannot encode credentials: %w", err)
+	}
+
+	data, err := c.send(ctx, http.MethodPost, "/authenticate?method="+method, "", payload)
+	if err != nil {
+		// The cause may echo the request, never include it for authentication.
+		var apiErr *Error
+		if errors.As(err, &apiErr) {
+			return "", fmt.Errorf("cannot authenticate to the Ziti controller: %d %s", apiErr.StatusCode, apiErr.Code)
+		}
+		return "", fmt.Errorf("cannot authenticate to the Ziti controller: %w", err)
+	}
+
+	var session struct {
+		Token string `json:"token"`
+	}
+	if err := json.Unmarshal(data, &session); err != nil {
+		return "", fmt.Errorf("cannot parse authentication response: %w", err)
+	}
+	if session.Token == "" {
+		return "", errors.New("authentication response does not contain a token")
+	}
+	return session.Token, nil
+}
+
+func (c *Client) send(ctx context.Context, method, path, token string, payload []byte) (json.RawMessage, error) {
+	var reader io.Reader
+	if payload != nil {
+		reader = bytes.NewReader(payload)
+	}
+
+	req, err := http.NewRequestWithContext(ctx, method, c.base+path, reader)
 	if err != nil {
 		return nil, err
 	}
-	defer resp.Body.Close()
+	req.Header.Set("Accept", "application/json")
+	if payload != nil {
+		req.Header.Set("Content-Type", "application/json")
+	}
+	if token != "" {
+		req.Header.Set(sessionHeader, token)
+	}
 
-	respBody, err := io.ReadAll(resp.Body)
+	resp, err := c.http.Do(req)
 	if err != nil {
 		return nil, err
 	}
+	defer resp.Body.Close() //nolint:errcheck // Nothing useful to do with a close error on a read body.
 
-	if resp.StatusCode == http.StatusNotFound {
-		// Ziti API may return 404 for validation errors too, check error body first
-		var zitiErr struct {
-			Error struct {
-				Code    string `json:"code"`
-				Message string `json:"message"`
-				Cause   struct {
-					Code    string `json:"code"`
-					Message string `json:"message"`
-				} `json:"cause"`
-			} `json:"error"`
-		}
-		if err := json.Unmarshal(respBody, &zitiErr); err == nil && zitiErr.Error.Cause.Message != "" {
-			return nil, fmt.Errorf("Ziti API error (%s): %s - %s", resp.Status, zitiErr.Error.Cause.Code, zitiErr.Error.Cause.Message)
-		}
-		return nil, apierrors.NewNotFound(schema.GroupResource{Group: "ziti.crossplane.io", Resource: path}, "not found")
-	}
-
-	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusCreated && resp.StatusCode != http.StatusNoContent {
-		// Try to parse Ziti error response for better error messages
-		var zitiErr struct {
-			Error struct {
-				Code    string `json:"code"`
-				Message string `json:"message"`
-				Cause   struct {
-					Code    string `json:"code"`
-					Message string `json:"message"`
-				} `json:"cause"`
-			} `json:"error"`
-		}
-		if err := json.Unmarshal(respBody, &zitiErr); err == nil && zitiErr.Error.Cause.Message != "" {
-			return nil, fmt.Errorf("Ziti API error (%s): %s - %s", resp.Status, zitiErr.Error.Cause.Code, zitiErr.Error.Cause.Message)
-		}
-		return nil, fmt.Errorf("Ziti API error (%s): %s", resp.Status, string(respBody))
-	}
-
-	return respBody, nil
-}
-
-// Create sends a POST request to create a Ziti resource.
-func (c *ZitiClient) Create(path string, body interface{}) ([]byte, error) {
-	return c.doRequest(http.MethodPost, path, body)
-}
-
-// Read sends a GET request to read a Ziti resource.
-func (c *ZitiClient) Read(path string) ([]byte, error) {
-	return c.doRequest(http.MethodGet, path, nil)
-}
-
-// Update sends a PATCH request to update a Ziti resource.
-// Note: Ziti management API uses PATCH for updates, not PUT.
-// PATCH returns empty data {"data":{}}, use Read() after to verify.
-func (c *ZitiClient) Update(path string, body interface{}) ([]byte, error) {
-	return c.doRequest(http.MethodPatch, path, body)
-}
-
-// Patch sends a PATCH request to update a Ziti resource.
-func (c *ZitiClient) Patch(path string, body interface{}) ([]byte, error) {
-	return c.doRequest(http.MethodPatch, path, body)
-}
-
-// Delete sends a DELETE request to delete a Ziti resource.
-func (c *ZitiClient) Delete(path string) ([]byte, error) {
-	return c.doRequest(http.MethodDelete, path, nil)
-}
-
-// CreateWithClient creates a resource using resty for retry support.
-func (c *ZitiClient) CreateWithClient(path string, body interface{}) ([]byte, error) {
-	client := c.newRestyClient()
-	resp, err := client.R().
-		SetHeader("Content-Type", "application/json").
-		SetHeader("zt-session", c.getToken()).
-		SetBody(body).
-		Post(c.host + path)
-
+	raw, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("cannot read response: %w", err)
 	}
-
-	if resp.StatusCode() == http.StatusNotFound {
-		// Ziti API may return 404 for validation errors too, check error body first
-		var zitiErr struct {
-			Error struct {
-				Code    string `json:"code"`
-				Message string `json:"message"`
-				Cause   struct {
-					Code    string `json:"code"`
-					Message string `json:"message"`
-				} `json:"cause"`
-			} `json:"error"`
-		}
-		if err := json.Unmarshal(resp.Body(), &zitiErr); err == nil && zitiErr.Error.Cause.Message != "" {
-			return nil, fmt.Errorf("Ziti API error (%d): %s - %s", resp.StatusCode(), zitiErr.Error.Cause.Code, zitiErr.Error.Cause.Message)
-		}
-		return nil, apierrors.NewNotFound(schema.GroupResource{Group: "ziti.crossplane.io", Resource: "resources"}, "not found")
-	}
-
-	if resp.StatusCode() != http.StatusOK && resp.StatusCode() != http.StatusCreated {
-		return nil, fmt.Errorf("Ziti API error (%d): %s", resp.StatusCode(), string(resp.Body()))
-	}
-
-	return resp.Body(), nil
+	return data(resp.StatusCode, raw)
 }
 
-// UpdateWithClient updates a resource using resty for retry support.
-// Note: Ziti management API uses PATCH for updates.
-func (c *ZitiClient) UpdateWithClient(path string, body interface{}) ([]byte, error) {
-	client := c.newRestyClient()
-	resp, err := client.R().
-		SetHeader("Content-Type", "application/json").
-		SetHeader("zt-session", c.getToken()).
-		SetBody(body).
-		Patch(c.host + path)
-
-	if err != nil {
-		return nil, err
+// data returns the data field of a response envelope, or the error the
+// response describes.
+func data(status int, raw []byte) (json.RawMessage, error) {
+	if status < http.StatusOK || status >= http.StatusMultipleChoices {
+		return nil, newError(status, raw)
 	}
 
-	if resp.StatusCode() == http.StatusNotFound {
-		var zitiErr struct {
-			Error struct {
-				Code    string `json:"code"`
-				Message string `json:"message"`
-				Cause   struct {
-					Code    string `json:"code"`
-					Message string `json:"message"`
-				} `json:"cause"`
-			} `json:"error"`
-		}
-		if err := json.Unmarshal(resp.Body(), &zitiErr); err == nil && zitiErr.Error.Cause.Message != "" {
-			return nil, fmt.Errorf("Ziti API error (%d): %s - %s", resp.StatusCode(), zitiErr.Error.Cause.Code, zitiErr.Error.Cause.Message)
-		}
-		return nil, apierrors.NewNotFound(schema.GroupResource{Group: "ziti.crossplane.io", Resource: "resources"}, "not found")
+	if len(bytes.TrimSpace(raw)) == 0 {
+		return nil, nil
 	}
 
-	if resp.StatusCode() != http.StatusOK && resp.StatusCode() != http.StatusCreated {
-		return nil, fmt.Errorf("Ziti API error (%d): %s", resp.StatusCode(), string(resp.Body()))
+	var envelope struct {
+		Data json.RawMessage `json:"data"`
 	}
-
-	return resp.Body(), nil
-}
-
-// newRestyClient creates a resty client with retry support.
-func (c *ZitiClient) newRestyClient() *resty.Client {
-	return resty.New().
-		SetTLSClientConfig(&tls.Config{InsecureSkipVerify: true}).
-		SetTimeout(30 * time.Second).
-		SetRetryCount(3).
-		SetRetryWaitTime(2 * time.Second).
-		SetRetryMaxWaitTime(10 * time.Second)
-}
-
-// ReadWithClient reads a resource using resty for retry support.
-func (c *ZitiClient) ReadWithClient(path string) ([]byte, error) {
-	client := c.newRestyClient()
-	resp, err := client.R().
-		SetHeader("Content-Type", "application/json").
-		SetHeader("zt-session", c.getToken()).
-		Get(c.host + path)
-
-	if err != nil {
-		return nil, err
+	if err := json.Unmarshal(raw, &envelope); err != nil {
+		return nil, fmt.Errorf("cannot parse response: %w", err)
 	}
-
-	if resp.StatusCode() == http.StatusNotFound {
-		return nil, apierrors.NewNotFound(schema.GroupResource{Group: "ziti.crossplane.io", Resource: path}, "not found")
-	}
-
-	if resp.StatusCode() != http.StatusOK {
-		return nil, fmt.Errorf("Ziti API error (%d): %s", resp.StatusCode(), string(resp.Body()))
-	}
-
-	return resp.Body(), nil
-}
-
-// Response wraps a Ziti API JSON response.
-type Response struct {
-	Data       json.RawMessage `json:"data"`
-	Success    bool            `json:"success"`
-	StatusCode int             `json:"statusCode"`
-	Msg        string          `json:"msg"`
-}
-
-// ParseResponse parses a Ziti API JSON response and extracts the data field.
-func ParseResponse(body []byte) (json.RawMessage, error) {
-	var resp Response
-	if err := json.Unmarshal(body, &resp); err != nil {
-		return nil, err
-	}
-	return resp.Data, nil
+	return envelope.Data, nil
 }

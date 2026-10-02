@@ -223,14 +223,6 @@ type ConfigHostV1Parameters struct {
 	// +optional
 	PortChecks []PortCheck `json:"portChecks,omitempty"`
 
-	// ConfigTypeID is the ID of the config type.
-	// +optional
-	ConfigTypeID *string `json:"configTypeId,omitempty"`
-
-	// RoleAttributes is a list of role attributes.
-	// +optional
-	RoleAttributes []string `json:"roleAttributes,omitempty"`
-
 	// Tags is a map of tags.
 	// +optional
 	Tags map[string]string `json:"tags,omitempty"`
@@ -255,7 +247,6 @@ type ConfigHostV1Observation struct {
 	Proxy                      *ProxyConfig                `json:"proxy,omitempty"`
 	HTTPChecks                 []HTTPCheck                 `json:"httpChecks,omitempty"`
 	PortChecks                 []PortCheck                 `json:"portChecks,omitempty"`
-	RoleAttributes             []string                    `json:"roleAttributes,omitempty"`
 	Tags                       map[string]string           `json:"tags,omitempty"`
 	CreatedAt                  string                      `json:"createdAt,omitempty"`
 	UpdatedAt                  string                      `json:"updatedAt,omitempty"`

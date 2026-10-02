@@ -47,16 +47,26 @@ type ServicePolicyParameters struct {
 	Type ServicePolicyType `json:"type"`
 
 	// Semantic is the matching semantic (AnyOf or AllOf).
+	// +optional
+	// +kubebuilder:default=AllOf
 	// +kubebuilder:validation:Enum=AnyOf;AllOf
-	Semantic ServicePolicySemantic `json:"semantic"`
+	Semantic ServicePolicySemantic `json:"semantic,omitempty"`
 
-	// ServiceRoles is a list of service role selectors.
+	// ServiceRoles is a list of service role selectors: "#all", "#attribute" or
+	// "@name", where name is the name or the ID of a service. Names are
+	// resolved to IDs.
+	// +optional
 	ServiceRoles []string `json:"serviceRoles,omitempty"`
 
-	// IdentityRoles is a list of identity role selectors.
+	// IdentityRoles is a list of identity role selectors: "#all", "#attribute" or
+	// "@name", where name is the name or the ID of an identity. Names are
+	// resolved to IDs.
+	// +optional
 	IdentityRoles []string `json:"identityRoles,omitempty"`
 
-	// PostureCheckRoles is a list of posture check role selectors.
+	// PostureCheckRoles is a list of posture check role selectors: "#all", "#attribute" or
+	// "@name", where name is the name or the ID of a posture check. Names are
+	// resolved to IDs.
 	// +optional
 	PostureCheckRoles []string `json:"postureCheckRoles,omitempty"`
 

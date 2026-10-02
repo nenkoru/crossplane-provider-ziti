@@ -37,11 +37,7 @@ type ConfigInterceptV1Parameters struct {
 	Protocols []string `json:"protocols"`
 
 	// PortRanges is a list of port ranges to intercept.
-	PortRanges []PortRange `json:"portRanges,omitempty"`
-
-	// MatchDomainStrategy is the domain matching strategy.
-	// +optional
-	MatchDomainStrategy *string `json:"matchDomainStrategy,omitempty"`
+	PortRanges []PortRange `json:"portRanges"`
 
 	// DialOptions is the dial options for the intercepted connection.
 	// +optional
@@ -49,11 +45,7 @@ type ConfigInterceptV1Parameters struct {
 
 	// SourceIP is the source IP to use for the intercepted connection.
 	// +optional
-	SourceIP *string `json:"sourceIp,omitempty"`
-
-	// RoleAttributes is a list of role attributes.
-	// +optional
-	RoleAttributes []string `json:"roleAttributes,omitempty"`
+	SourceIP string `json:"sourceIp,omitempty"`
 
 	// Tags is a map of tags.
 	// +optional
@@ -72,18 +64,16 @@ type DialOptions struct {
 
 // ConfigInterceptV1Observation represents the observed state of a Ziti Intercept V1 Config.
 type ConfigInterceptV1Observation struct {
-	ID                  string            `json:"id,omitempty"`
-	Name                string            `json:"name,omitempty"`
-	Addresses           []string          `json:"addresses,omitempty"`
-	Protocols           []string          `json:"protocols,omitempty"`
-	PortRanges          []PortRange       `json:"portRanges,omitempty"`
-	MatchDomainStrategy string            `json:"matchDomainStrategy,omitempty"`
-	DialOptions         *DialOptions      `json:"dialOptions,omitempty"`
-	SourceIP            *string           `json:"sourceIp,omitempty"`
-	RoleAttributes      []string          `json:"roleAttributes,omitempty"`
-	Tags                map[string]string `json:"tags,omitempty"`
-	CreatedAt           string            `json:"createdAt,omitempty"`
-	UpdatedAt           string            `json:"updatedAt,omitempty"`
+	ID          string            `json:"id,omitempty"`
+	Name        string            `json:"name,omitempty"`
+	Addresses   []string          `json:"addresses,omitempty"`
+	Protocols   []string          `json:"protocols,omitempty"`
+	PortRanges  []PortRange       `json:"portRanges,omitempty"`
+	DialOptions *DialOptions      `json:"dialOptions,omitempty"`
+	SourceIP    *string           `json:"sourceIp,omitempty"`
+	Tags        map[string]string `json:"tags,omitempty"`
+	CreatedAt   string            `json:"createdAt,omitempty"`
+	UpdatedAt   string            `json:"updatedAt,omitempty"`
 }
 
 // ConfigInterceptV1 is the Schema for the ConfigInterceptV1s API.

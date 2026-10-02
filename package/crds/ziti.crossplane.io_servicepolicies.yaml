@@ -65,7 +65,10 @@ spec:
                   Ziti Service Policy.
                 properties:
                   identityRoles:
-                    description: IdentityRoles is a list of identity role selectors.
+                    description: |-
+                      IdentityRoles is a list of identity role selectors: "#all", "#attribute" or
+                      "@name", where name is the name or the ID of an identity. Names are
+                      resolved to IDs.
                     items:
                       type: string
                     type: array
@@ -73,19 +76,25 @@ spec:
                     description: Name of the policy.
                     type: string
                   postureCheckRoles:
-                    description: PostureCheckRoles is a list of posture check role
-                      selectors.
+                    description: |-
+                      PostureCheckRoles is a list of posture check role selectors: "#all", "#attribute" or
+                      "@name", where name is the name or the ID of a posture check. Names are
+                      resolved to IDs.
                     items:
                       type: string
                     type: array
                   semantic:
+                    default: AllOf
                     description: Semantic is the matching semantic (AnyOf or AllOf).
                     enum:
                     - AnyOf
                     - AllOf
                     type: string
                   serviceRoles:
-                    description: ServiceRoles is a list of service role selectors.
+                    description: |-
+                      ServiceRoles is a list of service role selectors: "#all", "#attribute" or
+                      "@name", where name is the name or the ID of a service. Names are
+                      resolved to IDs.
                     items:
                       type: string
                     type: array
@@ -102,7 +111,6 @@ spec:
                     type: string
                 required:
                 - name
-                - semantic
                 - type
                 type: object
               managementPolicies:

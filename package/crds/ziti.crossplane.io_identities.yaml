@@ -8,6 +8,10 @@ metadata:
 spec:
   group: ziti.crossplane.io
   names:
+    categories:
+    - crossplane
+    - managed
+    - ziti
     kind: Identity
     listKind: IdentityList
     plural: identities
@@ -21,7 +25,7 @@ spec:
     - jsonPath: .status.atProvider.id
       name: ID
       type: string
-    - jsonPath: .status.conditions[?(@.type==\"Ready\")].status
+    - jsonPath: .status.conditions[?(@.type=="Ready")].status
       name: READY
       type: string
     - jsonPath: .metadata.creationTimestamp
@@ -30,7 +34,10 @@ spec:
     name: v1alpha1
     schema:
       openAPIV3Schema:
-        description: Identity is the top level Ziti identity resource.
+        description: |-
+          Identity is a Ziti identity with one-time token (OTT) enrollment. The
+          enrollment token is published to the connection secret under the key
+          enrollmentToken until the identity enrolls.
         properties:
           apiVersion:
             description: |-
@@ -68,9 +75,20 @@ spec:
                     items:
                       type: string
                     type: array
+                  tags:
+                    additionalProperties:
+                      type: string
+                    description: Tags is a map of tags.
+                    type: object
                   type:
                     default: Default
-                    description: 'TypeId is the identity type ID (default: "Default").'
+                    description: Type of the identity. It cannot be changed after
+                      creation.
+                    enum:
+                    - Default
+                    - User
+                    - Device
+                    - Service
                     type: string
                 required:
                 - name
@@ -141,6 +159,14 @@ spec:
                 properties:
                   createdAt:
                     type: string
+                  enrolled:
+                    description: Enrolled is true once the one-time enrollment token
+                      has been used.
+                    type: boolean
+                  enrollmentExpiresAt:
+                    description: EnrollmentExpiresAt is when the one-time enrollment
+                      token expires.
+                    type: string
                   id:
                     type: string
                   isAdmin:
@@ -151,6 +177,12 @@ spec:
                     items:
                       type: string
                     type: array
+                  tags:
+                    additionalProperties:
+                      type: string
+                    type: object
+                  typeId:
+                    type: string
                   updatedAt:
                     type: string
                 type: object

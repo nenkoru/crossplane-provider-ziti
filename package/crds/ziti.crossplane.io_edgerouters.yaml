@@ -34,7 +34,9 @@ spec:
     name: v1alpha1
     schema:
       openAPIV3Schema:
-        description: EdgeRouter is the Schema for the EdgeRouters API.
+        description: |-
+          EdgeRouter is a Ziti edge router. Its enrollment token is published to the
+          connection secret under the key enrollmentToken until the router enrolls.
         properties:
           apiVersion:
             description: |-
@@ -69,9 +71,6 @@ spec:
                     description: IsTunnelerEnabled indicates whether the tunneler
                       feature is enabled.
                     type: boolean
-                  listenerURL:
-                    description: ListenerURL is the listener URL for the edge router.
-                    type: string
                   name:
                     description: Name of the edge router.
                     type: string
@@ -167,8 +166,9 @@ spec:
                     type: string
                   isTunnelerEnabled:
                     type: boolean
-                  listenerURL:
-                    type: string
+                  isVerified:
+                    description: IsVerified is true once the edge router has enrolled.
+                    type: boolean
                   name:
                     type: string
                   noTraversal:

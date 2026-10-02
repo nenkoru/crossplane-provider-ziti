@@ -53,10 +53,13 @@ spec:
             description: ProviderConfigSpec specifies the state of a ProviderConfig.
             properties:
               ca:
-                description: CA is the PEM-encoded CA certificate for server verification.
+                description: |-
+                  CA is the PEM-encoded CA bundle used to verify the controller
+                  certificate. The system roots are used when it is not set.
                 type: string
               cert:
-                description: Cert is the PEM-encoded client certificate for mTLS authentication.
+                description: Cert is the PEM-encoded client certificate for certificate
+                  authentication.
                 type: string
               credentials:
                 description: |-
@@ -66,9 +69,10 @@ spec:
                   secretRef:
                     description: |-
                       SecretRef is a reference to the credentials secret.
-                      The secret should contain a key named "credentials" with a JSON object:
+                      The secret may contain the keys host, username, password, cert, key
+                      and ca, or a key named "credentials" with a JSON object:
                       {
-                        "host": "https://controller.example.com:441",
+                        "host": "https://controller.example.com:1280",
                         "username": "admin",
                         "password": "secret",
                         // OR for cert auth:
@@ -78,38 +82,45 @@ spec:
                       }
                     properties:
                       name:
-                        default: ""
-                        description: |-
-                          Name of the referent.
-                          This field is effectively required, but due to backwards compatibility is
-                          allowed to be empty. Instances of this type with an empty value here are
-                          almost certainly wrong.
-                          More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
+                        description: Name of the secret.
                         type: string
+                      namespace:
+                        description: |-
+                          Namespace of the secret. Required for a ClusterProviderConfig. A
+                          ProviderConfig always reads the secret from its own namespace.
+                        type: string
+                    required:
+                    - name
                     type: object
-                    x-kubernetes-map-type: atomic
                   source:
-                    description: Source of the provider credentials.
+                    default: Secret
+                    description: Source of the provider credentials. Only Secret is
+                      supported.
                     enum:
-                    - None
                     - Secret
-                    - InjectedIdentity
-                    - Environment
-                    - Filesystem
                     type: string
-                required:
-                - source
                 type: object
               host:
-                description: Host is the Ziti Controller URL (e.g. https://controller.example.com:441).
+                description: |-
+                  Host is the Ziti Controller URL (e.g. https://controller.example.com:1280).
+                  A trailing /edge/management/v1 is accepted and ignored.
                 type: string
+              insecureSkipTLSVerify:
+                description: |-
+                  InsecureSkipTLSVerify disables verification of the controller
+                  certificate. Use it only for testing.
+                type: boolean
               key:
-                description: Key is the PEM-encoded private key for mTLS authentication.
+                description: |-
+                  Key is the PEM-encoded private key for certificate authentication.
+                  Prefer supplying it through credentials.secretRef: anyone who can read
+                  this ProviderConfig can read an inline key.
                 type: string
               password:
                 description: |-
                   Password for password-based authentication.
-                  Required when using password auth (cert/key not provided).
+                  Prefer supplying it through credentials.secretRef: anyone who can read
+                  this ProviderConfig can read an inline password.
                 type: string
               username:
                 description: |-

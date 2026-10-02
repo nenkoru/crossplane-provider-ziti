@@ -20,12 +20,14 @@ import (
 	"github.com/crossplane/crossplane-runtime/v2/pkg/controller"
 	ctrl "sigs.k8s.io/controller-runtime"
 
+	"github.com/crossplane/provider-ziti/internal/connector"
 	"github.com/crossplane/provider-ziti/internal/controller/authpolicy"
 	"github.com/crossplane/provider-ziti/internal/controller/config"
 	"github.com/crossplane/provider-ziti/internal/controller/confighostv1"
 	"github.com/crossplane/provider-ziti/internal/controller/configinterceptv1"
 	"github.com/crossplane/provider-ziti/internal/controller/edgerouter"
 	"github.com/crossplane/provider-ziti/internal/controller/edgerouterpolicy"
+	"github.com/crossplane/provider-ziti/internal/controller/generic"
 	"github.com/crossplane/provider-ziti/internal/controller/identity"
 	"github.com/crossplane/provider-ziti/internal/controller/posturecheckmfa"
 	"github.com/crossplane/provider-ziti/internal/controller/posturecheckos"
@@ -37,21 +39,27 @@ import (
 // SetupGated creates all Ziti controllers with safe-start support and adds them to
 // the supplied manager.
 func SetupGated(mgr ctrl.Manager, o controller.Options) error {
-	for _, setup := range []func(ctrl.Manager, controller.Options) error{
-		config.Setup,
-		service.Setup,
-		edgerouter.Setup,
-		confighostv1.Setup,
-		configinterceptv1.Setup,
-		servicepolicy.Setup,
-		serviceedgerouterpolicy.Setup,
-		edgerouterpolicy.Setup,
-		identity.Setup,
-		posturecheckos.Setup,
-		posturecheckmfa.Setup,
-		authpolicy.Setup,
+	if err := config.Setup(mgr, o); err != nil {
+		return err
+	}
+
+	// All controllers share the connector, and with it the Ziti API sessions.
+	clients := connector.New(mgr.GetClient())
+
+	for _, setup := range []func() error{
+		func() error { return generic.SetupGated(mgr, o, clients, service.Kind) },
+		func() error { return generic.SetupGated(mgr, o, clients, confighostv1.Kind) },
+		func() error { return generic.SetupGated(mgr, o, clients, configinterceptv1.Kind) },
+		func() error { return generic.SetupGated(mgr, o, clients, servicepolicy.Kind) },
+		func() error { return generic.SetupGated(mgr, o, clients, serviceedgerouterpolicy.Kind) },
+		func() error { return generic.SetupGated(mgr, o, clients, edgerouterpolicy.Kind) },
+		func() error { return generic.SetupGated(mgr, o, clients, identity.Kind) },
+		func() error { return generic.SetupGated(mgr, o, clients, edgerouter.Kind) },
+		func() error { return generic.SetupGated(mgr, o, clients, posturecheckos.Kind) },
+		func() error { return generic.SetupGated(mgr, o, clients, posturecheckmfa.Kind) },
+		func() error { return generic.SetupGated(mgr, o, clients, authpolicy.Kind) },
 	} {
-		if err := setup(mgr, o); err != nil {
+		if err := setup(); err != nil {
 			return err
 		}
 	}

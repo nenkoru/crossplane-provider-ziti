@@ -61,19 +61,16 @@ type ServiceParameters struct {
 	// +optional
 	MaxIdleTimeMillis *int64 `json:"maxIdleTimeMillis,omitempty"`
 
-	// TerminatorStrategy defines how terminators are created.
-	// Valid values: smartrouting, weighted, random
+	// TerminatorStrategy defines how terminators are selected.
+	// Valid values: smartrouting, weighted, random, ha
 	// +optional
-	// +kubebuilder:validation:Enum=smartrouting;weighted;random
+	// +kubebuilder:validation:Enum=smartrouting;weighted;random;ha
 	TerminatorStrategy *TerminatorStrategy `json:"terminatorStrategy,omitempty"`
 
-	// Configs is a list of config IDs associated with this service.
+	// Configs is a list of names or IDs of the configs associated with this
+	// service. Names are resolved to IDs.
 	// +optional
 	Configs []string `json:"configs,omitempty"`
-
-	// PostureQueries is a list of posture check IDs associated with this service.
-	// +optional
-	PostureQueries []string `json:"postureQueries,omitempty"`
 
 	// RoleAttributes is a list of role attributes for the service.
 	// +optional
@@ -103,9 +100,6 @@ type ServiceObservation struct {
 
 	// Configs is the list of config IDs.
 	Configs []string `json:"configs,omitempty"`
-
-	// PostureQueries is the list of posture check IDs.
-	PostureQueries []string `json:"postureQueries,omitempty"`
 
 	// RoleAttributes is the list of role attributes.
 	RoleAttributes []string `json:"roleAttributes,omitempty"`

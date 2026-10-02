@@ -8,6 +8,10 @@ metadata:
 spec:
   group: ziti.crossplane.io
   names:
+    categories:
+    - crossplane
+    - managed
+    - ziti
     kind: PostureCheckMFA
     listKind: PostureCheckMFAList
     plural: posturecheckmfas
@@ -21,7 +25,7 @@ spec:
     - jsonPath: .status.atProvider.id
       name: ID
       type: string
-    - jsonPath: .status.conditions[?(@.type==\"Ready\")].status
+    - jsonPath: .status.conditions[?(@.type=="Ready")].status
       name: READY
       type: string
     - jsonPath: .metadata.creationTimestamp

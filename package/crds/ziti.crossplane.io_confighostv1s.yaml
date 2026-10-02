@@ -101,9 +101,6 @@ spec:
                     items:
                       type: string
                     type: array
-                  configTypeId:
-                    description: ConfigTypeID is the ID of the config type.
-                    type: string
                   forwardAddress:
                     description: ForwardAddress indicates whether to forward allowed
                       addresses.
@@ -336,11 +333,6 @@ spec:
                         - http
                         type: string
                     type: object
-                  roleAttributes:
-                    description: RoleAttributes is a list of role attributes.
-                    items:
-                      type: string
-                    type: array
                   tags:
                     additionalProperties:
                       type: string
@@ -665,10 +657,6 @@ spec:
                         - http
                         type: string
                     type: object
-                  roleAttributes:
-                    items:
-                      type: string
-                    type: array
                   tags:
                     additionalProperties:
                       type: string

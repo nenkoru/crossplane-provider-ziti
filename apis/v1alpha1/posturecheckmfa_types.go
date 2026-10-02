@@ -8,7 +8,7 @@ import (
 // PostureCheckMFASpec defines the desired state of a PostureCheckMFA.
 type PostureCheckMFASpec struct {
 	xpv2.ManagedResourceSpec `json:",inline"`
-	ForProvider       PostureCheckMFAParameters `json:"forProvider"`
+	ForProvider              PostureCheckMFAParameters `json:"forProvider"`
 }
 
 // PostureCheckMFAParameters define the desired state of an MFA Posture Check.
@@ -27,7 +27,7 @@ type PostureCheckMFAParameters struct {
 // PostureCheckMFAStatus defines the observed state of a PostureCheckMFA.
 type PostureCheckMFAStatus struct {
 	xpv2.ManagedResourceStatus `json:",inline"`
-	AtProvider          PostureCheckMFAObservation `json:"atProvider,omitempty"`
+	AtProvider                 PostureCheckMFAObservation `json:"atProvider,omitempty"`
 }
 
 // PostureCheckMFAObservation keeps the observed state.
@@ -46,8 +46,9 @@ type PostureCheckMFAObservation struct {
 // +kubebuilder:subresource:status
 // +kubebuilder:printcolumn:name="NAME",type="string",JSONPath=`.spec.forProvider.name`
 // +kubebuilder:printcolumn:name="ID",type="string",JSONPath=`.status.atProvider.id`
-// +kubebuilder:printcolumn:name="READY",type="string",JSONPath=`.status.conditions[?(@.type==\"Ready\")].status`
+// +kubebuilder:printcolumn:name="READY",type="string",JSONPath=`.status.conditions[?(@.type=="Ready")].status`
 // +kubebuilder:printcolumn:name="AGE",type="date",JSONPath=`.metadata.creationTimestamp`
+// +kubebuilder:resource:scope=Namespaced,categories={crossplane,managed,ziti}
 type PostureCheckMFA struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`
@@ -63,4 +64,3 @@ type PostureCheckMFAList struct {
 	metav1.ListMeta `json:"metadata,omitempty"`
 	Items           []PostureCheckMFA `json:"items"`
 }
-

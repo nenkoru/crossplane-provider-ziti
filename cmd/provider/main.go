@@ -26,9 +26,11 @@ import (
 	"github.com/alecthomas/kingpin/v2"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
+	corev1 "k8s.io/api/core/v1"
 	"k8s.io/client-go/tools/leaderelection/resourcelock"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/cache"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 	"sigs.k8s.io/controller-runtime/pkg/metrics"
 
@@ -88,6 +90,12 @@ func main() {
 		// The recommended way is to move it to cache.Options instead
 		Cache: cache.Options{
 			SyncPeriod: syncInterval,
+		},
+
+		// Secrets hold provider credentials and connection details. Reading
+		// them directly avoids caching every Secret of the cluster.
+		Client: client.Options{
+			Cache: &client.CacheOptions{DisableFor: []client.Object{&corev1.Secret{}}},
 		},
 
 		// controller-runtime uses both ConfigMaps and Leases for leader

@@ -62,12 +62,18 @@ spec:
                   a Ziti Edge Router Policy.
                 properties:
                   edgeRouterRoles:
-                    description: EdgeRouterRoles is a list of edge router role selectors.
+                    description: |-
+                      EdgeRouterRoles is a list of edge router role selectors: "#all", "#attribute" or
+                      "@name", where name is the name or the ID of an edge router. Names are
+                      resolved to IDs.
                     items:
                       type: string
                     type: array
                   identityRoles:
-                    description: IdentityRoles is a list of identity role selectors.
+                    description: |-
+                      IdentityRoles is a list of identity role selectors: "#all", "#attribute" or
+                      "@name", where name is the name or the ID of an identity. Names are
+                      resolved to IDs.
                     items:
                       type: string
                     type: array
@@ -75,6 +81,7 @@ spec:
                     description: Name of the policy.
                     type: string
                   semantic:
+                    default: AllOf
                     description: Semantic is the matching semantic (AnyOf or AllOf).
                     enum:
                     - AnyOf
@@ -86,10 +93,7 @@ spec:
                     description: Tags is a map of tags.
                     type: object
                 required:
-                - edgeRouterRoles
-                - identityRoles
                 - name
-                - semantic
                 type: object
               managementPolicies:
                 default:

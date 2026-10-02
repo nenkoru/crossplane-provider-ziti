@@ -8,6 +8,10 @@ metadata:
 spec:
   group: ziti.crossplane.io
   names:
+    categories:
+    - crossplane
+    - managed
+    - ziti
     kind: PostureCheckOS
     listKind: PostureCheckOSList
     plural: posturecheckoses
@@ -21,7 +25,7 @@ spec:
     - jsonPath: .status.atProvider.id
       name: ID
       type: string
-    - jsonPath: .status.conditions[?(@.type==\"Ready\")].status
+    - jsonPath: .status.conditions[?(@.type=="Ready")].status
       name: READY
       type: string
     - jsonPath: .metadata.creationTimestamp
@@ -156,12 +160,22 @@ spec:
                   name:
                     type: string
                   operatingSystems:
-                    description: |-
-                      RawMessage is a raw encoded JSON value.
-                      It implements [Marshaler] and [Unmarshaler] and can
-                      be used to delay JSON decoding or precompute a JSON encoding.
-                    format: byte
-                    type: string
+                    items:
+                      description: OperatingSystem defines an OS posture check constraint.
+                      properties:
+                        type:
+                          description: Type of operating system (e.g., Windows, macOS,
+                            Linux).
+                          type: string
+                        versions:
+                          description: Versions constraint (e.g., [">=10.0.0"]).
+                          items:
+                            type: string
+                          type: array
+                      required:
+                      - type
+                      type: object
+                    type: array
                   roleAttributes:
                     items:
                       type: string

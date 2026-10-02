@@ -3,7 +3,6 @@ package v1alpha1
 import (
 	resource "github.com/crossplane/crossplane-runtime/v2/pkg/resource"
 	xpv2 "github.com/crossplane/crossplane/apis/v2/core/v2"
-	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
@@ -24,7 +23,8 @@ type ProviderConfigStatus struct {
 
 // ZitiProviderConfigSpec defines the desired state of a Ziti ProviderConfig.
 type ZitiProviderConfigSpec struct {
-	// Host is the Ziti Controller URL (e.g. https://controller.example.com:441).
+	// Host is the Ziti Controller URL (e.g. https://controller.example.com:1280).
+	// A trailing /edge/management/v1 is accepted and ignored.
 	// +optional
 	Host string `json:"host,omitempty"`
 
@@ -34,22 +34,30 @@ type ZitiProviderConfigSpec struct {
 	Username string `json:"username,omitempty"`
 
 	// Password for password-based authentication.
-	// Required when using password auth (cert/key not provided).
-	// +optional
+	// Prefer supplying it through credentials.secretRef: anyone who can read
+	// this ProviderConfig can read an inline password.
 	// +optional
 	Password string `json:"password,omitempty"`
 
-	// Cert is the PEM-encoded client certificate for mTLS authentication.
+	// Cert is the PEM-encoded client certificate for certificate authentication.
 	// +optional
 	Cert string `json:"cert,omitempty"`
 
-	// Key is the PEM-encoded private key for mTLS authentication.
+	// Key is the PEM-encoded private key for certificate authentication.
+	// Prefer supplying it through credentials.secretRef: anyone who can read
+	// this ProviderConfig can read an inline key.
 	// +optional
 	Key string `json:"key,omitempty"`
 
-	// CA is the PEM-encoded CA certificate for server verification.
+	// CA is the PEM-encoded CA bundle used to verify the controller
+	// certificate. The system roots are used when it is not set.
 	// +optional
 	CA string `json:"ca,omitempty"`
+
+	// InsecureSkipTLSVerify disables verification of the controller
+	// certificate. Use it only for testing.
+	// +optional
+	InsecureSkipTLSVerify bool `json:"insecureSkipTLSVerify,omitempty"`
 
 	// Credentials required to authenticate to this provider.
 	// When specified, takes precedence over inline fields above.
@@ -59,14 +67,17 @@ type ZitiProviderConfigSpec struct {
 
 // ProviderCredentials required to authenticate.
 type ProviderCredentials struct {
-	// Source of the provider credentials.
-	// +kubebuilder:validation:Enum=None;Secret;InjectedIdentity;Environment;Filesystem
-	Source xpv2.CredentialsSource `json:"source"`
+	// Source of the provider credentials. Only Secret is supported.
+	// +optional
+	// +kubebuilder:default=Secret
+	// +kubebuilder:validation:Enum=Secret
+	Source xpv2.CredentialsSource `json:"source,omitempty"`
 
 	// SecretRef is a reference to the credentials secret.
-	// The secret should contain a key named "credentials" with a JSON object:
+	// The secret may contain the keys host, username, password, cert, key
+	// and ca, or a key named "credentials" with a JSON object:
 	// {
-	//   "host": "https://controller.example.com:441",
+	//   "host": "https://controller.example.com:1280",
 	//   "username": "admin",
 	//   "password": "secret",
 	//   // OR for cert auth:
@@ -75,7 +86,18 @@ type ProviderCredentials struct {
 	//   "ca": "-----BEGIN CERTIFICATE-----..."
 	// }
 	// +optional
-	SecretRef *corev1.LocalObjectReference `json:"secretRef,omitempty"`
+	SecretRef *CredentialsSecretReference `json:"secretRef,omitempty"`
+}
+
+// CredentialsSecretReference is a reference to a secret holding credentials.
+type CredentialsSecretReference struct {
+	// Name of the secret.
+	Name string `json:"name"`
+
+	// Namespace of the secret. Required for a ClusterProviderConfig. A
+	// ProviderConfig always reads the secret from its own namespace.
+	// +optional
+	Namespace string `json:"namespace,omitempty"`
 }
 
 // ProviderConfigSpec specifies the state of a ProviderConfig.

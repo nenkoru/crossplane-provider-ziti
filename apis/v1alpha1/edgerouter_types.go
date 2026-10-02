@@ -34,10 +34,6 @@ type EdgeRouterParameters struct {
 	// +optional
 	Cost *int64 `json:"cost,omitempty"`
 
-	// ListenerURL is the listener URL for the edge router.
-	// +optional
-	ListenerURL *string `json:"listenerURL,omitempty"`
-
 	// RoleAttributes is a list of role attributes for the edge router.
 	// +optional
 	RoleAttributes []string `json:"roleAttributes,omitempty"`
@@ -49,19 +45,21 @@ type EdgeRouterParameters struct {
 
 // EdgeRouterObservation represents the observed state of a Ziti Edge Router.
 type EdgeRouterObservation struct {
-	ID              string            `json:"id,omitempty"`
-	Name            string            `json:"name,omitempty"`
-	IsTunnelerEnabled bool            `json:"isTunnelerEnabled,omitempty"`
-	NoTraversal     bool              `json:"noTraversal,omitempty"`
-	Cost            int64             `json:"cost,omitempty"`
-	ListenerURL     string            `json:"listenerURL,omitempty"`
-	RoleAttributes  []string          `json:"roleAttributes,omitempty"`
-	Tags            map[string]string `json:"tags,omitempty"`
-	CreatedAt       string            `json:"createdAt,omitempty"`
-	UpdatedAt       string            `json:"updatedAt,omitempty"`
+	ID                string            `json:"id,omitempty"`
+	Name              string            `json:"name,omitempty"`
+	IsTunnelerEnabled bool              `json:"isTunnelerEnabled,omitempty"`
+	NoTraversal       bool              `json:"noTraversal,omitempty"`
+	Cost              int64             `json:"cost,omitempty"`
+	RoleAttributes    []string          `json:"roleAttributes,omitempty"`
+	Tags              map[string]string `json:"tags,omitempty"`
+	// IsVerified is true once the edge router has enrolled.
+	IsVerified bool   `json:"isVerified,omitempty"`
+	CreatedAt  string `json:"createdAt,omitempty"`
+	UpdatedAt  string `json:"updatedAt,omitempty"`
 }
 
-// EdgeRouter is the Schema for the EdgeRouters API.
+// EdgeRouter is a Ziti edge router. Its enrollment token is published to the
+// connection secret under the key enrollmentToken until the router enrolls.
 // +kubebuilder:object:root=true
 // +kubebuilder:subresource:status
 // +kubebuilder:printcolumn:name="NAME",type=string,JSONPath=`.spec.forProvider.name`

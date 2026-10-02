@@ -8,7 +8,7 @@ import (
 // AuthPolicySpec defines the desired state of an AuthPolicy.
 type AuthPolicySpec struct {
 	xpv2.ManagedResourceSpec `json:",inline"`
-	ForProvider       AuthPolicyParameters `json:"forProvider"`
+	ForProvider              AuthPolicyParameters `json:"forProvider"`
 }
 
 // AuthPolicyParameters define the desired state of a Ziti Auth Policy.
@@ -21,9 +21,6 @@ type AuthPolicyParameters struct {
 	// Secondary authentication methods.
 	// +optional
 	Secondary *AuthMethods `json:"secondary,omitempty"`
-	// RoleAttributes for the auth policy.
-	// +optional
-	RoleAttributes []string `json:"roleAttributes,omitempty"`
 }
 
 // AuthMethods defines primary or secondary auth methods.
@@ -80,16 +77,15 @@ type ExtJWTAuth struct {
 // AuthPolicyStatus defines the observed state of an AuthPolicy.
 type AuthPolicyStatus struct {
 	xpv2.ManagedResourceStatus `json:",inline"`
-	AtProvider          AuthPolicyObservation `json:"atProvider,omitempty"`
+	AtProvider                 AuthPolicyObservation `json:"atProvider,omitempty"`
 }
 
 // AuthPolicyObservation keeps the observed state.
 type AuthPolicyObservation struct {
-	ID             string   `json:"id,omitempty"`
-	Name           string   `json:"name,omitempty"`
-	RoleAttributes []string `json:"roleAttributes,omitempty"`
-	CreatedAt      string   `json:"createdAt,omitempty"`
-	UpdatedAt      string   `json:"updatedAt,omitempty"`
+	ID        string `json:"id,omitempty"`
+	Name      string `json:"name,omitempty"`
+	CreatedAt string `json:"createdAt,omitempty"`
+	UpdatedAt string `json:"updatedAt,omitempty"`
 }
 
 // AuthPolicy is the top level Ziti Auth Policy resource.
@@ -97,8 +93,9 @@ type AuthPolicyObservation struct {
 // +kubebuilder:subresource:status
 // +kubebuilder:printcolumn:name="NAME",type="string",JSONPath=`.spec.forProvider.name`
 // +kubebuilder:printcolumn:name="ID",type="string",JSONPath=`.status.atProvider.id`
-// +kubebuilder:printcolumn:name="READY",type="string",JSONPath=`.status.conditions[?(@.type==\"Ready\")].status`
+// +kubebuilder:printcolumn:name="READY",type="string",JSONPath=`.status.conditions[?(@.type=="Ready")].status`
 // +kubebuilder:printcolumn:name="AGE",type="date",JSONPath=`.metadata.creationTimestamp`
+// +kubebuilder:resource:scope=Namespaced,categories={crossplane,managed,ziti}
 type AuthPolicy struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`
@@ -114,4 +111,3 @@ type AuthPolicyList struct {
 	metav1.ListMeta `json:"metadata,omitempty"`
 	Items           []AuthPolicy `json:"items"`
 }
-

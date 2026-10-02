@@ -33,14 +33,22 @@ type ServiceEdgeRouterPolicyParameters struct {
 	Name string `json:"name"`
 
 	// Semantic is the matching semantic (AnyOf or AllOf).
+	// +optional
+	// +kubebuilder:default=AllOf
 	// +kubebuilder:validation:Enum=AnyOf;AllOf
-	Semantic ServiceEdgeRouterPolicySemantic `json:"semantic"`
+	Semantic ServiceEdgeRouterPolicySemantic `json:"semantic,omitempty"`
 
-	// ServiceRoles is a list of service role selectors.
-	ServiceRoles []string `json:"serviceRoles"`
+	// ServiceRoles is a list of service role selectors: "#all", "#attribute" or
+	// "@name", where name is the name or the ID of a service. Names are
+	// resolved to IDs.
+	// +optional
+	ServiceRoles []string `json:"serviceRoles,omitempty"`
 
-	// EdgeRouterRoles is a list of edge router role selectors.
-	EdgeRouterRoles []string `json:"edgeRouterRoles"`
+	// EdgeRouterRoles is a list of edge router role selectors: "#all", "#attribute" or
+	// "@name", where name is the name or the ID of an edge router. Names are
+	// resolved to IDs.
+	// +optional
+	EdgeRouterRoles []string `json:"edgeRouterRoles,omitempty"`
 
 	// Tags is a map of tags.
 	// +optional
