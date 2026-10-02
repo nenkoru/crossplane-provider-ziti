@@ -19,6 +19,7 @@ type IdentityParameters struct {
 	// +optional
 	// +kubebuilder:default=Default
 	// +kubebuilder:validation:Enum=Default;User;Device;Service
+	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="type cannot be changed after creation"
 	Type string `json:"type,omitempty"`
 	// IsAdmin grants admin privileges to the identity.
 	// +optional

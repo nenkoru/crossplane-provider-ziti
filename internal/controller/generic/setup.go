@@ -49,8 +49,8 @@ func Setup[T resource.ModernManaged](mgr ctrl.Manager, o controller.Options, cli
 		managed.WithTypedExternalConnector[T](&connector[T]{kind: kind, clients: clients}),
 		// Ziti assigns the ID of an entity when it is created, so the external
 		// name must stay empty until then instead of defaulting to the name of
-		// the managed resource.
-		managed.WithInitializers(),
+		// the managed resource. An ID that could not be saved is recovered.
+		managed.WithInitializers(NewCreationRecoverer(mgr.GetClient(), clients, kind.Collection)),
 		managed.WithLogger(o.Logger.WithValues("controller", name)),
 		managed.WithPollInterval(o.PollInterval),
 		managed.WithRecorder(event.NewAPIRecorder(mgr.GetEventRecorderFor(name))), //nolint:staticcheck // TODO(jbw976) Crossplane needs to update to the new events API, see https://github.com/crossplane/crossplane/issues/7152

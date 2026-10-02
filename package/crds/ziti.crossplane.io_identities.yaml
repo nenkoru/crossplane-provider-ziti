@@ -90,6 +90,9 @@ spec:
                     - Device
                     - Service
                     type: string
+                    x-kubernetes-validations:
+                    - message: type cannot be changed after creation
+                      rule: self == oldSelf
                 required:
                 - name
                 type: object

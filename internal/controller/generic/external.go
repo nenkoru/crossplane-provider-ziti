@@ -63,7 +63,8 @@ type Kind[T resource.ModernManaged] struct {
 	// Desired returns the fields of the Ziti entity the managed resource asks
 	// for. They are sent when the entity is created and updated, and the
 	// entity is up to date when it matches every one of them. It may use the
-	// API to resolve references to other entities.
+	// API to resolve references to other entities. The name of the entity
+	// must be spec.forProvider.name of the managed resource.
 	Desired func(ctx context.Context, api *client.Client, mg T) (map[string]any, error)
 
 	// ReplaceOnUpdate updates the entity with PUT instead of PATCH. PUT resets

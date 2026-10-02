@@ -46,7 +46,8 @@ const (
 // Config holds the configuration for connecting to a Ziti Controller.
 type Config struct {
 	// Host is the Ziti Controller URL (e.g. https://controller.example.com:1280).
-	// A trailing /edge/management/v1 is accepted and ignored.
+	// It must use https: credentials and API sessions are never sent in the
+	// clear. A trailing /edge/management/v1 is accepted and ignored.
 	Host string
 
 	// Username for password-based authentication.
@@ -133,8 +134,8 @@ func baseURL(host string) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("invalid host URL: %w", err)
 	}
-	if (u.Scheme != "https" && u.Scheme != "http") || u.Host == "" {
-		return "", fmt.Errorf("host must be an http or https URL, got %q", host)
+	if u.Scheme != "https" || u.Host == "" {
+		return "", fmt.Errorf("host must be an https URL, got %q", host)
 	}
 
 	path := strings.TrimSuffix(strings.TrimRight(u.Path, "/"), managementPath)
@@ -199,19 +200,29 @@ func (c *Client) Delete(ctx context.Context, collection, id string) error {
 	return err
 }
 
+// FindByName returns the entity with the supplied name, which is unique
+// within a collection, or nil if there is no such entity.
+func (c *Client) FindByName(ctx context.Context, collection, name string) (json.RawMessage, error) {
+	items, err := c.Find(ctx, collection, "name="+quote(name))
+	if err != nil || len(items) == 0 {
+		return nil, err
+	}
+	return items[0], nil
+}
+
 // ResolveID returns the ID of the entity with the supplied name. A value that
 // does not match a name is returned as is if an entity with that ID exists.
 func (c *Client) ResolveID(ctx context.Context, collection, nameOrID string) (string, error) {
-	items, err := c.Find(ctx, collection, "name="+quote(nameOrID))
+	named, err := c.FindByName(ctx, collection, nameOrID)
 	if err != nil {
 		return "", err
 	}
 
-	if len(items) > 0 {
+	if named != nil {
 		var item struct {
 			ID string `json:"id"`
 		}
-		if err := json.Unmarshal(items[0], &item); err != nil {
+		if err := json.Unmarshal(named, &item); err != nil {
 			return "", fmt.Errorf("cannot parse %s list: %w", collection, err)
 		}
 		return item.ID, nil

@@ -24,8 +24,9 @@ type ProviderConfigStatus struct {
 // ZitiProviderConfigSpec defines the desired state of a Ziti ProviderConfig.
 type ZitiProviderConfigSpec struct {
 	// Host is the Ziti Controller URL (e.g. https://controller.example.com:1280).
-	// A trailing /edge/management/v1 is accepted and ignored.
+	// It must use https. A trailing /edge/management/v1 is accepted and ignored.
 	// +optional
+	// +kubebuilder:validation:Pattern=`^https://.+`
 	Host string `json:"host,omitempty"`
 
 	// Username for password-based authentication.

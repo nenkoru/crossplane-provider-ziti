@@ -149,7 +149,8 @@ func (l lifecycle[T]) run(t *testing.T) {
 	}
 }
 
-// entity returns the stored entity without its id, as generic JSON.
+// entity returns the stored entity without its id and the time it was
+// created, as generic JSON.
 func entity(t *testing.T, srv *fake.Server, collection, id string) map[string]any {
 	t.Helper()
 
@@ -162,6 +163,7 @@ func entity(t *testing.T, srv *fake.Server, collection, id string) map[string]an
 		t.Fatalf("cannot decode entity: %v", err)
 	}
 	delete(out, "id")
+	delete(out, "createdAt")
 	return out
 }
 

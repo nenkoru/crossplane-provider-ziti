@@ -55,7 +55,16 @@ How to read the table:
 
 - **Identity of an entity.** The `crossplane.io/external-name` annotation holds
   the Ziti ID. It is empty until the entity is created. To adopt an existing
-  entity, create the managed resource with the annotation set to its ID.
+  entity, create the managed resource with the annotation set to its ID. An
+  entity that merely has the same name is never taken over: creating the
+  managed resource fails with the name conflict Ziti reports.
+- **Interrupted creation.** If the provider stops after Ziti created the
+  entity and before the ID was saved, the next reconcile finds the entity by
+  its name and continues with it, provided it is not older than the creation
+  that was interrupted. If an older entity has the name, the resource stays
+  blocked with Crossplane's "cannot determine creation result" error until
+  you set the external name yourself or remove the
+  `crossplane.io/external-create-pending` annotation.
 - **Drift.** Every field the provider sends is compared with what Ziti
   reports, on every poll (one minute by default, `--poll`). A change made in
   Ziti directly is reverted. Optional settings that are left unset in the
@@ -70,6 +79,8 @@ How to read the table:
   Secret keeps the last one. An expired token is not renewed yet.
 - **Deletion.** Deleting a managed resource deletes the Ziti entity. Set
   `spec.managementPolicies` to keep it.
+- **Immutable settings.** The `type` of an `Identity` cannot be changed after
+  creation; the API server rejects the change.
 - **Updates.** Entities are updated with `PATCH`, so settings the provider
   does not manage are left alone. `Service` and `AuthPolicy` are replaced
   with `PUT` instead: a `PATCH` of a service ignores `encryptionRequired`, and
@@ -120,6 +131,7 @@ spec:
 - The Secret may hold the keys `host`, `username`, `password`, `cert`, `key`
   and `ca`, or one key `credentials` with the same settings as JSON. `cert`
   and `key` select certificate authentication.
+- `host` must be an `https` URL: credentials are never sent in the clear.
 - The controller certificate is verified against the system roots. Set
   `spec.ca` for a controller with its own PKI, or
   `spec.insecureSkipTLSVerify: true` for testing.

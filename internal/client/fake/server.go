@@ -29,6 +29,7 @@ import (
 	"regexp"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/crossplane/provider-ziti/internal/client"
 )
@@ -45,7 +46,7 @@ const (
 var nameFilter = regexp.MustCompile(`^name="((?:[^"\\]|\\.)*)"$`)
 
 // Server is a fake Ziti controller. Entities are stored as the JSON documents
-// that were posted to it, plus an id.
+// that were posted to it, plus an id and the time they were created.
 type Server struct {
 	*httptest.Server
 
@@ -229,6 +230,7 @@ func (s *Server) create(w http.ResponseWriter, r *http.Request, collection strin
 
 	s.nextID++
 	entity["id"] = fmt.Sprintf("id-%d", s.nextID)
+	entity["createdAt"] = time.Now().UTC().Format(time.RFC3339Nano)
 
 	// The controller turns an enrollment request into an enrollment token.
 	if enrollment, ok := entity["enrollment"].(map[string]any); ok && enrollment["ott"] == true {
@@ -279,7 +281,8 @@ func (s *Server) patch(w http.ResponseWriter, r *http.Request, collection, id st
 }
 
 func (s *Server) replace(w http.ResponseWriter, r *http.Request, collection, id string) {
-	if _, ok := s.collections[collection][id]; !ok {
+	old, ok := s.collections[collection][id]
+	if !ok {
 		writeError(w, http.StatusNotFound, "NOT_FOUND", nil)
 		return
 	}
@@ -290,6 +293,9 @@ func (s *Server) replace(w http.ResponseWriter, r *http.Request, collection, id 
 		return
 	}
 	entity["id"] = id
+	if created, ok := old["createdAt"]; ok {
+		entity["createdAt"] = created
+	}
 	s.put(collection, entity)
 	writeData(w, http.StatusOK, map[string]any{})
 }

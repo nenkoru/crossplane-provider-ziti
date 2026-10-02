@@ -102,7 +102,8 @@ spec:
               host:
                 description: |-
                   Host is the Ziti Controller URL (e.g. https://controller.example.com:1280).
-                  A trailing /edge/management/v1 is accepted and ignored.
+                  It must use https. A trailing /edge/management/v1 is accepted and ignored.
+                pattern: ^https://.+
                 type: string
               insecureSkipTLSVerify:
                 description: |-

@@ -59,7 +59,11 @@ func TestNew(t *testing.T) {
 		},
 		"MissingScheme": {
 			cfg:     client.Config{Host: "ziti.example.com:1280", Username: "u", Password: "p"},
-			wantErr: "host must be an http or https URL",
+			wantErr: "host must be an https URL",
+		},
+		"PlainHTTP": {
+			cfg:     client.Config{Host: "http://ziti.example.com:1280", Username: "u", Password: "p"},
+			wantErr: "host must be an https URL",
 		},
 		"MissingCredentials": {
 			cfg:     client.Config{Host: "https://ziti.example.com:1280", Username: "u"},
@@ -108,7 +112,8 @@ func TestLifecycle(t *testing.T) {
 	if err := json.Unmarshal(data, &got); err != nil {
 		t.Fatalf("cannot parse entity: %v", err)
 	}
-	want := map[string]any{"id": id, "name": "web", "encryptionRequired": true}
+	created := got["createdAt"]
+	want := map[string]any{"id": id, "name": "web", "encryptionRequired": true, "createdAt": created}
 	if diff := cmp.Diff(want, got); diff != "" {
 		t.Errorf("Get(...): -want, +got:\n%s", diff)
 	}
@@ -116,7 +121,7 @@ func TestLifecycle(t *testing.T) {
 	if err := c.Patch(ctx, "services", id, map[string]any{"terminatorStrategy": "weighted"}); err != nil {
 		t.Fatalf("Patch(...): %v", err)
 	}
-	patched := map[string]any{"id": id, "name": "web", "encryptionRequired": true, "terminatorStrategy": "weighted"}
+	patched := map[string]any{"id": id, "name": "web", "encryptionRequired": true, "terminatorStrategy": "weighted", "createdAt": created}
 	if diff := cmp.Diff(patched, srv.Entity("services", id)); diff != "" {
 		t.Errorf("entity after Patch(...): -want, +got:\n%s", diff)
 	}
@@ -125,7 +130,7 @@ func TestLifecycle(t *testing.T) {
 	if err := c.Put(ctx, "services", id, map[string]any{"name": "web", "encryptionRequired": false}); err != nil {
 		t.Fatalf("Put(...): %v", err)
 	}
-	replaced := map[string]any{"id": id, "name": "web", "encryptionRequired": false}
+	replaced := map[string]any{"id": id, "name": "web", "encryptionRequired": false, "createdAt": created}
 	if diff := cmp.Diff(replaced, srv.Entity("services", id)); diff != "" {
 		t.Errorf("entity after Put(...): -want, +got:\n%s", diff)
 	}

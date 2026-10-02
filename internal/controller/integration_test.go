@@ -97,6 +97,15 @@ func TestControllers(t *testing.T) {
 		},
 	)
 
+	// Credentials are only ever sent over TLS.
+	plain := &v1alpha1.ProviderConfig{
+		ObjectMeta: meta1("plain-http"),
+		Spec:       v1alpha1.ProviderConfigSpec{ZitiProviderConfigSpec: v1alpha1.ZitiProviderConfigSpec{Host: "http://ziti.example.com:1280"}},
+	}
+	if err := k.Create(ctx, plain); !kerrors.IsInvalid(err) {
+		t.Errorf("creating a ProviderConfig with an http host: want it to be rejected as invalid, got %v", err)
+	}
+
 	pc := xpv2.ManagedResourceSpec{ProviderConfigReference: &xpv2.ProviderConfigReference{Kind: "ProviderConfig", Name: "default"}}
 	withSecret := pc
 	withSecret.WriteConnectionSecretToReference = &xpv2.LocalSecretReference{Name: "web-client-enrollment"}
@@ -191,6 +200,37 @@ func TestControllers(t *testing.T) {
 		got, _ := srv.Entity("identities", identityID)["roleAttributes"].([]any)
 		return len(got) == 1 && got[0] == "clients"
 	})
+
+	// The type of an identity is fixed when it is created.
+	eventually(t, "changing the type of an identity is rejected", func() bool {
+		if err := k.Get(ctx, kube.ObjectKeyFromObject(idn), idn); err != nil {
+			return false
+		}
+		idn.Spec.ForProvider.Type = "Device"
+		return kerrors.IsInvalid(k.Update(ctx, idn))
+	})
+
+	// A creation that was interrupted before the Ziti ID could be saved is
+	// recovered: the entity it left behind is taken over, not duplicated.
+	srv.Put("services", map[string]any{"id": "left-behind", "name": "interrupted", "createdAt": time.Now().UTC().Format(time.RFC3339Nano)})
+	interrupted := &v1alpha1.Service{
+		ObjectMeta: meta1("interrupted"),
+		Spec:       v1alpha1.ServiceSpec{ManagedResourceSpec: pc, ForProvider: v1alpha1.ServiceParameters{Name: "interrupted"}},
+	}
+	meta.SetExternalCreatePending(interrupted, time.Now())
+	create(ctx, t, k, interrupted)
+	managed = []resource.Managed{policy, svc, host, idn, interrupted}
+	eventually(t, "the service whose creation was interrupted takes over the entity left behind", func() bool {
+		if err := k.Get(ctx, kube.ObjectKeyFromObject(interrupted), interrupted); err != nil {
+			return false
+		}
+		return meta.GetExternalName(interrupted) == "left-behind" &&
+			interrupted.GetCondition(xpv2.TypeReady).Status == corev1.ConditionTrue &&
+			interrupted.GetCondition(xpv2.TypeSynced).Status == corev1.ConditionTrue
+	})
+	if got := srv.Len("services"); got != 2 {
+		t.Errorf("want the two services of the two managed resources in Ziti, got %d", got)
+	}
 
 	// Deleting the managed resources deletes the entities.
 	for _, mg := range managed {
