@@ -53,9 +53,11 @@ type EdgeRouterObservation struct {
 	RoleAttributes    []string          `json:"roleAttributes,omitempty"`
 	Tags              map[string]string `json:"tags,omitempty"`
 	// IsVerified is true once the edge router has enrolled.
-	IsVerified bool   `json:"isVerified,omitempty"`
-	CreatedAt  string `json:"createdAt,omitempty"`
-	UpdatedAt  string `json:"updatedAt,omitempty"`
+	IsVerified bool `json:"isVerified,omitempty"`
+	// EnrollmentExpiresAt is when the enrollment token expires.
+	EnrollmentExpiresAt string `json:"enrollmentExpiresAt,omitempty"`
+	CreatedAt           string `json:"createdAt,omitempty"`
+	UpdatedAt           string `json:"updatedAt,omitempty"`
 }
 
 // EdgeRouter is a Ziti edge router. Its enrollment token is published to the

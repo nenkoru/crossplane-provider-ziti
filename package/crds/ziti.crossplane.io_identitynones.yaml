@@ -91,6 +91,17 @@ spec:
                     - required
                     - failed
                     type: string
+                  enrollmentDuration:
+                    description: |-
+                      EnrollmentDuration is how long an enrollment token is valid that
+                      replaces one that expired or is gone, 180m when this is not set. It
+                      does not apply to the first token, which is valid for as long as the
+                      Ziti controller is configured to make it, and an identity without an
+                      enrollment has no use for it.
+                    type: string
+                    x-kubernetes-validations:
+                    - message: enrollmentDuration must be at least 5m
+                      rule: duration(self) >= duration('5m')
                   externalId:
                     description: ExternalID identifies the identity to an external
                       JWT signer.

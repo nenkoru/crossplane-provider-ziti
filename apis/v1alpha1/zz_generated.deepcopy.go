@@ -9,6 +9,7 @@
 package v1alpha1
 
 import (
+	"k8s.io/apimachinery/pkg/apis/meta/v1"
 	runtime "k8s.io/apimachinery/pkg/runtime"
 )
 
@@ -1726,6 +1727,11 @@ func (in *IdentityParameters) DeepCopyInto(out *IdentityParameters) {
 	if in.ExternalID != nil {
 		in, out := &in.ExternalID, &out.ExternalID
 		*out = new(string)
+		**out = **in
+	}
+	if in.EnrollmentDuration != nil {
+		in, out := &in.EnrollmentDuration, &out.EnrollmentDuration
+		*out = new(v1.Duration)
 		**out = **in
 	}
 	if in.DefaultHostingCost != nil {
