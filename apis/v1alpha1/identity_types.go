@@ -11,7 +11,8 @@ type IdentitySpec struct {
 	ForProvider              IdentityParameters `json:"forProvider"`
 }
 
-// IdentityParameters define the desired state of a Ziti Identity.
+// IdentityParameters define the desired state of a Ziti Identity. All
+// identity kinds share them; the kinds differ in how the identity enrolls.
 type IdentityParameters struct {
 	// Name of the identity.
 	Name string `json:"name"`
@@ -28,6 +29,35 @@ type IdentityParameters struct {
 	// RoleAttributes for the identity.
 	// +optional
 	RoleAttributes []string `json:"roleAttributes,omitempty"`
+	// AuthPolicyID is the name or ID of the auth policy that governs how the
+	// identity authenticates. Ziti assigns its default auth policy when this
+	// is not set.
+	// +optional
+	AuthPolicyID *string `json:"authPolicyId,omitempty"`
+	// ExternalID identifies the identity to an external JWT signer.
+	// +optional
+	ExternalID *string `json:"externalId,omitempty"`
+	// DefaultHostingCost is the cost of the terminators the identity hosts.
+	// +optional
+	// +kubebuilder:validation:Minimum=0
+	// +kubebuilder:validation:Maximum=65535
+	DefaultHostingCost *int32 `json:"defaultHostingCost,omitempty"`
+	// DefaultHostingPrecedence is the precedence of the terminators the
+	// identity hosts.
+	// +optional
+	// +kubebuilder:validation:Enum=default;required;failed
+	DefaultHostingPrecedence *string `json:"defaultHostingPrecedence,omitempty"`
+	// ServiceHostingCosts overrides the hosting cost per service. Keys are
+	// service names or IDs.
+	// +optional
+	ServiceHostingCosts map[string]int32 `json:"serviceHostingCosts,omitempty"`
+	// ServiceHostingPrecedences overrides the hosting precedence (default,
+	// required, failed) per service. Keys are service names or IDs.
+	// +optional
+	ServiceHostingPrecedences map[string]string `json:"serviceHostingPrecedences,omitempty"`
+	// AppData is a map of data for the applications that use the identity.
+	// +optional
+	AppData map[string]string `json:"appData,omitempty"`
 	// Tags is a map of tags.
 	// +optional
 	Tags map[string]string `json:"tags,omitempty"`
@@ -39,17 +69,24 @@ type IdentityStatus struct {
 	AtProvider                 IdentityObservation `json:"atProvider,omitempty"`
 }
 
-// IdentityObservation keeps the observed state.
+// IdentityObservation keeps the observed state of an identity of any kind.
 type IdentityObservation struct {
-	ID             string            `json:"id,omitempty"`
-	Name           string            `json:"name,omitempty"`
-	TypeID         string            `json:"typeId,omitempty"`
-	IsAdmin        bool              `json:"isAdmin,omitempty"`
-	RoleAttributes []string          `json:"roleAttributes,omitempty"`
-	Tags           map[string]string `json:"tags,omitempty"`
-	// Enrolled is true once the one-time enrollment token has been used.
+	ID                        string            `json:"id,omitempty"`
+	Name                      string            `json:"name,omitempty"`
+	TypeID                    string            `json:"typeId,omitempty"`
+	IsAdmin                   bool              `json:"isAdmin,omitempty"`
+	RoleAttributes            []string          `json:"roleAttributes,omitempty"`
+	AuthPolicyID              string            `json:"authPolicyId,omitempty"`
+	ExternalID                string            `json:"externalId,omitempty"`
+	DefaultHostingCost        int32             `json:"defaultHostingCost,omitempty"`
+	DefaultHostingPrecedence  string            `json:"defaultHostingPrecedence,omitempty"`
+	ServiceHostingCosts       map[string]int32  `json:"serviceHostingCosts,omitempty"`
+	ServiceHostingPrecedences map[string]string `json:"serviceHostingPrecedences,omitempty"`
+	AppData                   map[string]string `json:"appData,omitempty"`
+	Tags                      map[string]string `json:"tags,omitempty"`
+	// Enrolled is true once the identity has used its enrollment token.
 	Enrolled bool `json:"enrolled,omitempty"`
-	// EnrollmentExpiresAt is when the one-time enrollment token expires.
+	// EnrollmentExpiresAt is when the enrollment token expires.
 	EnrollmentExpiresAt string `json:"enrollmentExpiresAt,omitempty"`
 	CreatedAt           string `json:"createdAt,omitempty"`
 	UpdatedAt           string `json:"updatedAt,omitempty"`

@@ -15,7 +15,8 @@ limitations under the License.
 */
 
 // Package identity maps the Identity managed resource to Ziti identities
-// that enroll with a one-time token.
+// that enroll with a one-time token. It also holds what the other identity
+// kinds, which differ only in how the identity enrolls, share with it.
 package identity
 
 import (
@@ -31,55 +32,125 @@ import (
 	"github.com/crossplane/provider-ziti/internal/controller/generic"
 )
 
-// ConnectionKeyEnrollmentToken is the connection secret key that holds the
-// one-time enrollment token (JWT) of an identity.
-const ConnectionKeyEnrollmentToken = "enrollmentToken"
+const (
+	// Collection is the Ziti API collection identities of every kind are
+	// stored in.
+	Collection = "identities"
+
+	// ConnectionKeyEnrollmentToken is the connection secret key that holds
+	// the enrollment token (JWT) of an identity.
+	ConnectionKeyEnrollmentToken = "enrollmentToken"
+)
 
 // Kind describes how an Identity maps to the Ziti API.
 var Kind = generic.Kind[*v1alpha1.Identity]{
-	GVK:               v1alpha1.IdentityGroupVersionKind,
-	List:              &v1alpha1.IdentityList{},
-	Collection:        "identities",
-	Desired:           desired,
-	CreateOnly:        createOnly,
-	Observe:           observe,
-	ConnectionDetails: connectionDetails,
+	GVK:        v1alpha1.IdentityGroupVersionKind,
+	List:       &v1alpha1.IdentityList{},
+	Collection: Collection,
+	Desired: func(ctx context.Context, api *client.Client, mg *v1alpha1.Identity) (map[string]any, error) {
+		return Desired(ctx, api, mg.Spec.ForProvider)
+	},
+	CreateOnly: func(_ context.Context, _ *client.Client, mg *v1alpha1.Identity) (map[string]any, error) {
+		return CreateOnly(mg.Spec.ForProvider, map[string]any{"ott": true}), nil
+	},
+	Observe: func(mg *v1alpha1.Identity, raw json.RawMessage) error {
+		return Observe(raw, &mg.Status.AtProvider)
+	},
+	ConnectionDetails: ConnectionDetails,
+}
+
+// methods are the enrollment methods of the identity kinds, in the order in
+// which a pending enrollment is looked for.
+var methods = []string{"ott", "ottca", "updb"}
+
+// enrollment is a pending enrollment of a Ziti identity.
+type enrollment struct {
+	JWT       string `json:"jwt"`
+	ExpiresAt string `json:"expiresAt"`
 }
 
 // entity holds the fields of a Ziti identity that are not copied to the
 // status as is.
 type entity struct {
-	Authenticators struct {
-		Cert json.RawMessage `json:"cert"`
-	} `json:"authenticators"`
-	Enrollment struct {
-		OTT struct {
-			JWT       string `json:"jwt"`
-			ExpiresAt string `json:"expiresAt"`
-		} `json:"ott"`
-	} `json:"enrollment"`
+	Authenticators map[string]json.RawMessage `json:"authenticators"`
+	Enrollment     map[string]enrollment      `json:"enrollment"`
 }
 
-func desired(_ context.Context, _ *client.Client, mg *v1alpha1.Identity) (map[string]any, error) {
-	p := mg.Spec.ForProvider
-
-	return map[string]any{
-		"name":           p.Name,
-		"isAdmin":        ptr.Deref(p.IsAdmin, false),
-		"roleAttributes": generic.Strings(p.RoleAttributes),
-		"tags":           generic.Tags(p.Tags),
-	}, nil
+// pending returns the enrollment the identity has not completed yet, if any.
+func (e entity) pending() enrollment {
+	for _, method := range methods {
+		if pending := e.Enrollment[method]; pending.JWT != "" {
+			return pending
+		}
+	}
+	return enrollment{}
 }
 
-func createOnly(_ context.Context, _ *client.Client, mg *v1alpha1.Identity) (map[string]any, error) {
-	return map[string]any{
-		"type":       cmp.Or(mg.Spec.ForProvider.Type, "Default"),
-		"enrollment": map[string]any{"ott": true},
-	}, nil
+// enrolled returns true if the identity has something to authenticate with.
+func (e entity) enrolled() bool {
+	for _, authenticator := range e.Authenticators {
+		if len(authenticator) > 0 && string(authenticator) != "null" {
+			return true
+		}
+	}
+	return false
 }
 
-func observe(mg *v1alpha1.Identity, raw json.RawMessage) error {
-	if err := generic.Unmarshal(raw, &mg.Status.AtProvider); err != nil {
+// Desired returns the fields of a Ziti identity that identities of every
+// kind manage.
+func Desired(ctx context.Context, api *client.Client, p v1alpha1.IdentityParameters) (map[string]any, error) {
+	costs, err := generic.ResolveKeys(ctx, api, "services", p.ServiceHostingCosts)
+	if err != nil {
+		return nil, err
+	}
+	precedences, err := generic.ResolveKeys(ctx, api, "services", p.ServiceHostingPrecedences)
+	if err != nil {
+		return nil, err
+	}
+
+	body := map[string]any{
+		"name":                      p.Name,
+		"isAdmin":                   ptr.Deref(p.IsAdmin, false),
+		"roleAttributes":            generic.Strings(p.RoleAttributes),
+		"serviceHostingCosts":       costs,
+		"serviceHostingPrecedences": precedences,
+		"appData":                   generic.Tags(p.AppData),
+		"tags":                      generic.Tags(p.Tags),
+	}
+
+	if p.AuthPolicyID != nil {
+		id, err := api.ResolveID(ctx, "auth-policies", *p.AuthPolicyID)
+		if err != nil {
+			return nil, err
+		}
+		body["authPolicyId"] = id
+	}
+	if p.ExternalID != nil {
+		body["externalId"] = *p.ExternalID
+	}
+	if p.DefaultHostingCost != nil {
+		body["defaultHostingCost"] = *p.DefaultHostingCost
+	}
+	if p.DefaultHostingPrecedence != nil {
+		body["defaultHostingPrecedence"] = *p.DefaultHostingPrecedence
+	}
+	return body, nil
+}
+
+// CreateOnly returns the fields of a Ziti identity that can only be set when
+// it is created: its type and how it enrolls. An identity without an
+// enrollment takes nil.
+func CreateOnly(p v1alpha1.IdentityParameters, enrollment map[string]any) map[string]any {
+	body := map[string]any{"type": cmp.Or(p.Type, "Default")}
+	if enrollment != nil {
+		body["enrollment"] = enrollment
+	}
+	return body
+}
+
+// Observe copies a Ziti identity into the status of its managed resource.
+func Observe(raw json.RawMessage, o *v1alpha1.IdentityObservation) error {
+	if err := generic.Unmarshal(raw, o); err != nil {
 		return err
 	}
 
@@ -87,20 +158,22 @@ func observe(mg *v1alpha1.Identity, raw json.RawMessage) error {
 	if err := json.Unmarshal(raw, &e); err != nil {
 		return err
 	}
-	mg.Status.AtProvider.Enrolled = len(e.Authenticators.Cert) > 0 && string(e.Authenticators.Cert) != "null"
-	mg.Status.AtProvider.EnrollmentExpiresAt = e.Enrollment.OTT.ExpiresAt
+	o.Enrolled = e.enrolled()
+	o.EnrollmentExpiresAt = e.pending().ExpiresAt
 	return nil
 }
 
-// connectionDetails returns the enrollment token, which Ziti only reports
+// ConnectionDetails returns the enrollment token, which Ziti only reports
 // until the identity enrolls.
-func connectionDetails(raw json.RawMessage) (managed.ConnectionDetails, error) {
+func ConnectionDetails(raw json.RawMessage) (managed.ConnectionDetails, error) {
 	var e entity
 	if err := json.Unmarshal(raw, &e); err != nil {
 		return nil, err
 	}
-	if e.Enrollment.OTT.JWT == "" {
+
+	token := e.pending().JWT
+	if token == "" {
 		return nil, nil
 	}
-	return managed.ConnectionDetails{ConnectionKeyEnrollmentToken: []byte(e.Enrollment.OTT.JWT)}, nil
+	return managed.ConnectionDetails{ConnectionKeyEnrollmentToken: []byte(token)}, nil
 }

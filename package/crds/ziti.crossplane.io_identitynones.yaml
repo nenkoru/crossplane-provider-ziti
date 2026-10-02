@@ -4,7 +4,7 @@ kind: CustomResourceDefinition
 metadata:
   annotations:
     controller-gen.kubebuilder.io/version: v0.20.0
-  name: identities.ziti.crossplane.io
+  name: identitynones.ziti.crossplane.io
 spec:
   group: ziti.crossplane.io
   names:
@@ -12,10 +12,10 @@ spec:
     - crossplane
     - managed
     - ziti
-    kind: Identity
-    listKind: IdentityList
-    plural: identities
-    singular: identity
+    kind: IdentityNone
+    listKind: IdentityNoneList
+    plural: identitynones
+    singular: identitynone
   scope: Namespaced
   versions:
   - additionalPrinterColumns:
@@ -35,9 +35,8 @@ spec:
     schema:
       openAPIV3Schema:
         description: |-
-          Identity is a Ziti identity with one-time token (OTT) enrollment. The
-          enrollment token is published to the connection secret under the key
-          enrollmentToken until the identity enrolls.
+          IdentityNone is a Ziti identity without an enrollment. It suits identities
+          that authenticate through an external JWT signer.
         properties:
           apiVersion:
             description: |-
@@ -57,7 +56,7 @@ spec:
           metadata:
             type: object
           spec:
-            description: IdentitySpec defines the desired state of an Identity.
+            description: IdentityNoneSpec defines the desired state of an IdentityNone.
             properties:
               forProvider:
                 description: |-
@@ -203,7 +202,7 @@ spec:
             - forProvider
             type: object
           status:
-            description: IdentityStatus defines the observed state of an Identity.
+            description: IdentityNoneStatus defines the observed state of an IdentityNone.
             properties:
               atProvider:
                 description: IdentityObservation keeps the observed state of an identity

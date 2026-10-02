@@ -1,0 +1,19 @@
+# An identity without an enrollment: it authenticates through an external
+# JWT signer, which recognizes it by externalId. authPolicyId takes the name
+# or the ID of an auth policy; "default" is the policy every Ziti network has.
+apiVersion: ziti.crossplane.io/v1alpha1
+kind: IdentityNone
+metadata:
+  name: sso-user
+spec:
+  providerConfigRef:
+    kind: ProviderConfig
+    name: default
+  forProvider:
+    name: sso-user
+    externalId: sso-user@example.com
+    authPolicyId: default
+    roleAttributes:
+      - web-clients
+    appData:
+      department: engineering

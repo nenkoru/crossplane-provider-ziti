@@ -1,0 +1,38 @@
+# A service that is hosted at two destinations. A host.v2 config lists
+# terminators; each one takes the settings of a host.v1 config.
+apiVersion: ziti.crossplane.io/v1alpha1
+kind: ConfigHostV2
+metadata:
+  name: web-hosts
+spec:
+  providerConfigRef:
+    kind: ProviderConfig
+    name: default
+  forProvider:
+    name: web-hosts
+    terminators:
+      - address: web-1.internal
+        port: 8080
+        protocol: tcp
+        listenOptions:
+          precedence: required
+      - address: web-2.internal
+        port: 8080
+        protocol: tcp
+    tags:
+      team: platform
+---
+apiVersion: ziti.crossplane.io/v1alpha1
+kind: Service
+metadata:
+  name: web-pair
+spec:
+  providerConfigRef:
+    kind: ProviderConfig
+    name: default
+  forProvider:
+    name: web-pair
+    configs:
+      - web-hosts
+    roleAttributes:
+      - role:web

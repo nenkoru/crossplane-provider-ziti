@@ -1,0 +1,19 @@
+# An identity that enrolls with a one-time token and a client certificate
+# issued by a third-party certificate authority. ottca is the name or ID of
+# that certificate authority in Ziti, which must exist. The token is written
+# to the connection secret under the key enrollmentToken.
+apiVersion: ziti.crossplane.io/v1alpha1
+kind: IdentityCA
+metadata:
+  name: sensor
+spec:
+  providerConfigRef:
+    kind: ProviderConfig
+    name: default
+  writeConnectionSecretToRef:
+    name: sensor-enrollment
+  forProvider:
+    name: sensor
+    ottca: device-ca
+    roleAttributes:
+      - sensors

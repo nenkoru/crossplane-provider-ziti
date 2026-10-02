@@ -118,6 +118,32 @@ func ConfigType(ctx context.Context, api *client.Client, name string) (map[strin
 	return map[string]any{"configTypeId": id}, nil
 }
 
+// ResolveKeys resolves the keys of a map, which are names or IDs of entities,
+// to IDs. A nil map is returned as an empty one, so that it is sent as {} and
+// clears the field.
+func ResolveKeys[V any](ctx context.Context, api *client.Client, collection string, byNameOrID map[string]V) (map[string]V, error) {
+	out := make(map[string]V, len(byNameOrID))
+	for n, v := range byNameOrID {
+		id, err := api.ResolveID(ctx, collection, n)
+		if err != nil {
+			return nil, err
+		}
+		out[id] = v
+	}
+	return out, nil
+}
+
+// DropDisabledForwarding removes the forwarding switches of a host
+// terminator that are off. The host config schemas only accept true for them:
+// forwarding is disabled by leaving them out.
+func DropDisabledForwarding(terminator map[string]any) {
+	for _, field := range []string{"forwardProtocol", "forwardPort", "forwardAddress"} {
+		if terminator[field] == false {
+			delete(terminator, field)
+		}
+	}
+}
+
 // ConfigData returns the type specific settings of a config: the parameters
 // of its managed resource without the fields common to all configs.
 func ConfigData(parameters any) (map[string]any, error) {

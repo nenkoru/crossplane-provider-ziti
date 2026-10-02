@@ -24,11 +24,15 @@ import (
 	"github.com/crossplane/provider-ziti/internal/controller/authpolicy"
 	"github.com/crossplane/provider-ziti/internal/controller/config"
 	"github.com/crossplane/provider-ziti/internal/controller/confighostv1"
+	"github.com/crossplane/provider-ziti/internal/controller/confighostv2"
 	"github.com/crossplane/provider-ziti/internal/controller/configinterceptv1"
 	"github.com/crossplane/provider-ziti/internal/controller/edgerouter"
 	"github.com/crossplane/provider-ziti/internal/controller/edgerouterpolicy"
 	"github.com/crossplane/provider-ziti/internal/controller/generic"
 	"github.com/crossplane/provider-ziti/internal/controller/identity"
+	"github.com/crossplane/provider-ziti/internal/controller/identityca"
+	"github.com/crossplane/provider-ziti/internal/controller/identitynone"
+	"github.com/crossplane/provider-ziti/internal/controller/identityupdb"
 	"github.com/crossplane/provider-ziti/internal/controller/posturecheckmfa"
 	"github.com/crossplane/provider-ziti/internal/controller/posturecheckos"
 	"github.com/crossplane/provider-ziti/internal/controller/service"
@@ -49,11 +53,15 @@ func SetupGated(mgr ctrl.Manager, o controller.Options) error {
 	for _, setup := range []func() error{
 		func() error { return generic.SetupGated(mgr, o, clients, service.Kind) },
 		func() error { return generic.SetupGated(mgr, o, clients, confighostv1.Kind) },
+		func() error { return generic.SetupGated(mgr, o, clients, confighostv2.Kind) },
 		func() error { return generic.SetupGated(mgr, o, clients, configinterceptv1.Kind) },
 		func() error { return generic.SetupGated(mgr, o, clients, servicepolicy.Kind) },
 		func() error { return generic.SetupGated(mgr, o, clients, serviceedgerouterpolicy.Kind) },
 		func() error { return generic.SetupGated(mgr, o, clients, edgerouterpolicy.Kind) },
 		func() error { return generic.SetupGated(mgr, o, clients, identity.Kind) },
+		func() error { return generic.SetupGated(mgr, o, clients, identityca.Kind) },
+		func() error { return generic.SetupGated(mgr, o, clients, identityupdb.Kind) },
+		func() error { return generic.SetupGated(mgr, o, clients, identitynone.Kind) },
 		func() error { return generic.SetupGated(mgr, o, clients, edgerouter.Kind) },
 		func() error { return generic.SetupGated(mgr, o, clients, posturecheckos.Kind) },
 		func() error { return generic.SetupGated(mgr, o, clients, posturecheckmfa.Kind) },

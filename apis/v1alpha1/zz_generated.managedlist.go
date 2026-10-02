@@ -26,6 +26,15 @@ func (l *ConfigHostV1List) GetItems() []resource.Managed {
 	return items
 }
 
+// GetItems of this ConfigHostV2List.
+func (l *ConfigHostV2List) GetItems() []resource.Managed {
+	items := make([]resource.Managed, len(l.Items))
+	for i := range l.Items {
+		items[i] = &l.Items[i]
+	}
+	return items
+}
+
 // GetItems of this ConfigInterceptV1List.
 func (l *ConfigInterceptV1List) GetItems() []resource.Managed {
 	items := make([]resource.Managed, len(l.Items))
@@ -53,8 +62,35 @@ func (l *EdgeRouterPolicyList) GetItems() []resource.Managed {
 	return items
 }
 
+// GetItems of this IdentityCAList.
+func (l *IdentityCAList) GetItems() []resource.Managed {
+	items := make([]resource.Managed, len(l.Items))
+	for i := range l.Items {
+		items[i] = &l.Items[i]
+	}
+	return items
+}
+
 // GetItems of this IdentityList.
 func (l *IdentityList) GetItems() []resource.Managed {
+	items := make([]resource.Managed, len(l.Items))
+	for i := range l.Items {
+		items[i] = &l.Items[i]
+	}
+	return items
+}
+
+// GetItems of this IdentityNoneList.
+func (l *IdentityNoneList) GetItems() []resource.Managed {
+	items := make([]resource.Managed, len(l.Items))
+	for i := range l.Items {
+		items[i] = &l.Items[i]
+	}
+	return items
+}
+
+// GetItems of this IdentityUPDBList.
+func (l *IdentityUPDBList) GetItems() []resource.Managed {
 	items := make([]resource.Managed, len(l.Items))
 	for i := range l.Items {
 		items[i] = &l.Items[i]

@@ -19,6 +19,7 @@ package controller_test
 import (
 	"context"
 	"os"
+	"strings"
 	"testing"
 	"time"
 
@@ -48,6 +49,7 @@ import (
 	"github.com/crossplane/provider-ziti/apis/v1alpha1"
 	"github.com/crossplane/provider-ziti/internal/client/fake"
 	"github.com/crossplane/provider-ziti/internal/controller"
+	"github.com/crossplane/provider-ziti/internal/controller/generic"
 	"github.com/crossplane/provider-ziti/internal/controller/identity"
 )
 
@@ -127,7 +129,8 @@ func TestControllers(t *testing.T) {
 	host := &v1alpha1.ConfigHostV1{
 		ObjectMeta: meta1("web-host"),
 		Spec: v1alpha1.ConfigHostV1Spec{ManagedResourceSpec: pc, ForProvider: v1alpha1.ConfigHostV1Parameters{
-			Name: "web-host", Address: ptr.To("localhost"), Port: ptr.To(int32(8080)), Protocol: ptr.To("tcp"),
+			Name:           "web-host",
+			HostTerminator: v1alpha1.HostTerminator{Address: ptr.To("localhost"), Port: ptr.To(int32(8080)), Protocol: ptr.To("tcp")},
 		}},
 	}
 	idn := &v1alpha1.Identity{
@@ -219,7 +222,6 @@ func TestControllers(t *testing.T) {
 	}
 	meta.SetExternalCreatePending(interrupted, time.Now())
 	create(ctx, t, k, interrupted)
-	managed = []resource.Managed{policy, svc, host, idn, interrupted}
 	eventually(t, "the service whose creation was interrupted takes over the entity left behind", func() bool {
 		if err := k.Get(ctx, kube.ObjectKeyFromObject(interrupted), interrupted); err != nil {
 			return false
@@ -232,7 +234,108 @@ func TestControllers(t *testing.T) {
 		t.Errorf("want the two services of the two managed resources in Ziti, got %d", got)
 	}
 
+	// A creation Ziti carries out without answering is recovered as well.
+	srv.LoseNextCreateResponse()
+	unanswered := &v1alpha1.Service{
+		ObjectMeta: meta1("unanswered"),
+		Spec:       v1alpha1.ServiceSpec{ManagedResourceSpec: pc, ForProvider: v1alpha1.ServiceParameters{Name: "unanswered"}},
+	}
+	create(ctx, t, k, unanswered)
+	eventually(t, "the service whose creation was not answered finds its entity", func() bool {
+		if err := k.Get(ctx, kube.ObjectKeyFromObject(unanswered), unanswered); err != nil {
+			return false
+		}
+		_, onRecord := unanswered.GetAnnotations()[generic.AnnotationKeyCreateUnconfirmed]
+		return meta.GetExternalName(unanswered) != "" && !onRecord &&
+			unanswered.GetCondition(xpv2.TypeReady).Status == corev1.ConditionTrue &&
+			unanswered.GetCondition(xpv2.TypeSynced).Status == corev1.ConditionTrue
+	})
+	if got := srv.Len("services"); got != 3 {
+		t.Errorf("want one service per managed resource in Ziti, three in all, got %d", got)
+	}
+
+	// A resource whose creation was interrupted while someone else held its
+	// name owns nothing: it reports the conflict and can be deleted, and the
+	// entity of the other party is left alone.
+	srv.Put("services", map[string]any{"id": "foreign", "name": "taken", "createdAt": time.Now().Add(-time.Hour).UTC().Format(time.RFC3339Nano)})
+	taken := &v1alpha1.Service{
+		ObjectMeta: meta1("taken"),
+		Spec:       v1alpha1.ServiceSpec{ManagedResourceSpec: pc, ForProvider: v1alpha1.ServiceParameters{Name: "taken"}},
+	}
+	meta.SetExternalCreatePending(taken, time.Now())
+	create(ctx, t, k, taken)
+	eventually(t, "the service whose name is taken reports the conflict", func() bool {
+		if err := k.Get(ctx, kube.ObjectKeyFromObject(taken), taken); err != nil {
+			return false
+		}
+		synced := taken.GetCondition(xpv2.TypeSynced)
+		return synced.Status == corev1.ConditionFalse && strings.Contains(synced.Message, "COULD_NOT_VALIDATE")
+	})
+	if got := meta.GetExternalName(taken); got != "" {
+		t.Errorf("external name of the service whose name is taken: want none, got %q", got)
+	}
+	if err := k.Delete(ctx, taken); err != nil {
+		t.Fatalf("cannot delete the service whose name is taken: %v", err)
+	}
+	eventually(t, "the service whose name is taken is gone", func() bool {
+		return kerrors.IsNotFound(k.Get(ctx, kube.ObjectKeyFromObject(taken), taken))
+	})
+	if srv.Entity("services", "foreign") == nil {
+		t.Errorf("want the service of the other party to be left alone, but it is gone")
+	}
+	srv.Delete("services", "foreign")
+
+	// The kinds that share their logic with another kind have schemas of
+	// their own.
+	hosts := &v1alpha1.ConfigHostV2{
+		ObjectMeta: meta1("web-hosts"),
+		Spec: v1alpha1.ConfigHostV2Spec{ManagedResourceSpec: pc, ForProvider: v1alpha1.ConfigHostV2Parameters{
+			Name: "web-hosts",
+			Terminators: []v1alpha1.HostTerminator{
+				{Address: ptr.To("web-1.internal"), Port: ptr.To(int32(8080)), Protocol: ptr.To("tcp")},
+				{Address: ptr.To("web-2.internal"), Port: ptr.To(int32(8080)), Protocol: ptr.To("tcp")},
+			},
+		}},
+	}
+	operator := &v1alpha1.IdentityUPDB{
+		ObjectMeta: meta1("operator"),
+		Spec: v1alpha1.IdentityUPDBSpec{ManagedResourceSpec: pc, ForProvider: v1alpha1.IdentityUPDBParameters{
+			IdentityParameters: v1alpha1.IdentityParameters{Name: "operator", Type: "User"},
+			UpdbUsername:       "operator",
+		}},
+	}
+	create(ctx, t, k, hosts, operator)
+	for _, mg := range []resource.Managed{hosts, operator} {
+		eventually(t, "%T %s is ready and synced", func() bool {
+			if err := k.Get(ctx, kube.ObjectKeyFromObject(mg), mg); err != nil {
+				return false
+			}
+			return mg.GetCondition(xpv2.TypeReady).Status == corev1.ConditionTrue &&
+				mg.GetCondition(xpv2.TypeSynced).Status == corev1.ConditionTrue
+		}, mg, mg.GetName())
+	}
+	if got, _ := srv.Entity("configs", meta.GetExternalName(hosts))["configTypeId"].(string); got != "host-v2-id" {
+		t.Errorf("config type of the host.v2 config: want host-v2-id, got %q", got)
+	}
+	eventually(t, "changing the username of a password identity is rejected", func() bool {
+		if err := k.Get(ctx, kube.ObjectKeyFromObject(operator), operator); err != nil {
+			return false
+		}
+		operator.Spec.ForProvider.UpdbUsername = "someone-else"
+		return kerrors.IsInvalid(k.Update(ctx, operator))
+	})
+	empty := &v1alpha1.ConfigHostV2{
+		ObjectMeta: meta1("no-hosts"),
+		Spec: v1alpha1.ConfigHostV2Spec{ManagedResourceSpec: pc, ForProvider: v1alpha1.ConfigHostV2Parameters{
+			Name: "no-hosts", Terminators: []v1alpha1.HostTerminator{},
+		}},
+	}
+	if err := k.Create(ctx, empty); !kerrors.IsInvalid(err) {
+		t.Errorf("creating a host.v2 config without terminators: want it to be rejected as invalid, got %v", err)
+	}
+
 	// Deleting the managed resources deletes the entities.
+	managed = []resource.Managed{policy, svc, host, idn, interrupted, unanswered, hosts, operator}
 	for _, mg := range managed {
 		if err := k.Delete(ctx, mg); err != nil {
 			t.Fatalf("cannot delete %T %s: %v", mg, mg.GetName(), err)
