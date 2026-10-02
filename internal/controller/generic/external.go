@@ -25,6 +25,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"maps"
+	"time"
 
 	"github.com/crossplane/crossplane-runtime/v2/pkg/errors"
 	"github.com/crossplane/crossplane-runtime/v2/pkg/meta"
@@ -209,8 +210,15 @@ func (e *external[T]) Create(ctx context.Context, mg T) (managed.ExternalCreatio
 		maps.Copy(desired, createOnly)
 	}
 
+	sent := time.Now()
 	id, err := e.api.Create(ctx, e.kind.Collection, desired)
 	if err != nil {
+		// Without an answer of the controller the entity may exist all the
+		// same. The reconciler saves the annotations of a failed creation, and
+		// the CreationRecoverer looks for the entity before the next attempt.
+		if !client.IsRejected(err) && mg.GetAnnotations()[AnnotationKeyCreateUnconfirmed] == "" {
+			meta.AddAnnotations(mg, map[string]string{AnnotationKeyCreateUnconfirmed: sent.UTC().Format(time.RFC3339)})
+		}
 		return managed.ExternalCreation{}, errors.Wrap(err, errCreate)
 	}
 
@@ -251,15 +259,18 @@ func (e *external[T]) Disconnect(_ context.Context) error {
 }
 
 // stringifyTags makes sure all tag values are strings. Ziti also accepts
-// booleans, numbers and null as tag values.
+// booleans, numbers and null as values of tags and of the application data of
+// an identity, which is a second set of tags.
 func stringifyTags(entity map[string]any) {
-	tags, ok := entity["tags"].(map[string]any)
-	if !ok {
-		return
-	}
-	for k, v := range tags {
-		if _, ok := v.(string); !ok {
-			tags[k] = fmt.Sprint(v)
+	for _, field := range []string{"tags", "appData"} {
+		tags, ok := entity[field].(map[string]any)
+		if !ok {
+			continue
+		}
+		for k, v := range tags {
+			if _, ok := v.(string); !ok {
+				tags[k] = fmt.Sprint(v)
+			}
 		}
 	}
 }

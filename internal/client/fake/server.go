@@ -56,6 +56,8 @@ type Server struct {
 	nextID      int
 	logins      int
 	requests    []string
+	ahead       time.Duration
+	loseCreate  bool
 }
 
 // NewServer starts a fake Ziti controller serving TLS.
@@ -69,6 +71,7 @@ func NewServer() *Server {
 	s.StartTLS()
 
 	s.Put("config-types", map[string]any{"id": "host-v1-id", "name": "host.v1"})
+	s.Put("config-types", map[string]any{"id": "host-v2-id", "name": "host.v2"})
 	s.Put("config-types", map[string]any{"id": "intercept-v1-id", "name": "intercept.v1"})
 	return s
 }
@@ -97,6 +100,13 @@ func (s *Server) put(collection string, entity map[string]any) {
 	s.collections[collection][fmt.Sprint(entity["id"])] = entity
 }
 
+// Delete removes an entity.
+func (s *Server) Delete(collection, id string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	delete(s.collections[collection], id)
+}
+
 // Entity returns a copy of the stored entity, or nil if it does not exist.
 func (s *Server) Entity(collection, id string) map[string]any {
 	s.mu.Lock()
@@ -109,6 +119,28 @@ func (s *Server) Len(collection string) int {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return len(s.collections[collection])
+}
+
+// SetClockAhead makes the clock of the fake controller run ahead of the
+// local one, or behind it if the duration is negative.
+func (s *Server) SetClockAhead(d time.Duration) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.ahead = d
+}
+
+// LoseNextCreateResponse makes the fake controller carry out the next
+// creation and answer it with an error, as a proxy does that gives up
+// waiting for the controller.
+func (s *Server) LoseNextCreateResponse() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.loseCreate = true
+}
+
+// now returns the time on the clock of the fake controller.
+func (s *Server) now() time.Time {
+	return time.Now().Add(s.ahead)
 }
 
 // ExpireSessions invalidates all API sessions.
@@ -135,6 +167,8 @@ func (s *Server) Requests() []string {
 func (s *Server) handle(w http.ResponseWriter, r *http.Request) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+
+	w.Header().Set("Date", s.now().UTC().Format(http.TimeFormat))
 
 	path, ok := strings.CutPrefix(r.URL.Path, prefix)
 	if !ok {
@@ -230,20 +264,28 @@ func (s *Server) create(w http.ResponseWriter, r *http.Request, collection strin
 
 	s.nextID++
 	entity["id"] = fmt.Sprintf("id-%d", s.nextID)
-	entity["createdAt"] = time.Now().UTC().Format(time.RFC3339Nano)
+	entity["createdAt"] = s.now().UTC().Format(time.RFC3339Nano)
 
-	// The controller turns an enrollment request into an enrollment token.
-	if enrollment, ok := entity["enrollment"].(map[string]any); ok && enrollment["ott"] == true {
-		entity["enrollment"] = map[string]any{"ott": map[string]any{
-			"jwt":       "jwt-for-" + fmt.Sprint(entity["name"]),
-			"expiresAt": "2030-01-01T00:00:00.000Z",
-		}}
+	// The controller turns an enrollment request, whatever its method, into
+	// an enrollment token.
+	if enrollment, ok := entity["enrollment"].(map[string]any); ok {
+		for method := range enrollment {
+			enrollment[method] = map[string]any{
+				"jwt":       "jwt-for-" + fmt.Sprint(entity["name"]),
+				"expiresAt": "2030-01-01T00:00:00.000Z",
+			}
+		}
 	}
 	if collection == "edge-routers" {
 		entity["enrollmentJwt"] = "jwt-for-" + fmt.Sprint(entity["name"])
 	}
 
 	s.put(collection, entity)
+	if s.loseCreate {
+		s.loseCreate = false
+		w.WriteHeader(http.StatusBadGateway)
+		return
+	}
 	writeData(w, http.StatusCreated, map[string]any{"id": entity["id"]})
 }
 

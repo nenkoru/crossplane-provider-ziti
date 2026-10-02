@@ -30,6 +30,7 @@ import (
 	"net/url"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -79,6 +80,10 @@ type Client struct {
 
 	mu    sync.Mutex
 	token string
+
+	// ahead is how far the clock of the controller is ahead of the local
+	// one, once a response has told the time.
+	ahead atomic.Pointer[time.Duration]
 }
 
 // New creates a Client from the supplied config. It does not contact the
@@ -349,12 +354,36 @@ func (c *Client) send(ctx context.Context, method, path, token string, payload [
 		return nil, err
 	}
 	defer resp.Body.Close() //nolint:errcheck // Nothing useful to do with a close error on a read body.
+	c.observeClock(resp.Header.Get("Date"))
 
 	raw, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return nil, fmt.Errorf("cannot read response: %w", err)
 	}
 	return data(resp.StatusCode, raw)
+}
+
+// observeClock compares the time a response was sent at with the local clock.
+func (c *Client) observeClock(date string) {
+	sent, err := http.ParseTime(date)
+	if err != nil {
+		return
+	}
+
+	ahead := time.Until(sent)
+	c.ahead.Store(&ahead)
+}
+
+// ClockAhead returns how far the clock of the controller is ahead of the
+// local clock, to the second, going by the latest response. It is negative
+// if the clock of the controller is behind. The second value is false if no
+// response has told the time yet.
+func (c *Client) ClockAhead() (time.Duration, bool) {
+	ahead := c.ahead.Load()
+	if ahead == nil {
+		return 0, false
+	}
+	return *ahead, true
 }
 
 // data returns the data field of a response envelope, or the error the
