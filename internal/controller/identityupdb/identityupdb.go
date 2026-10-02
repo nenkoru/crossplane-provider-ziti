@@ -30,9 +30,10 @@ import (
 
 // Kind describes how an IdentityUPDB maps to the Ziti API.
 var Kind = generic.Kind[*v1alpha1.IdentityUPDB]{
-	GVK:        v1alpha1.IdentityUPDBGroupVersionKind,
-	List:       &v1alpha1.IdentityUPDBList{},
-	Collection: identity.Collection,
+	GVK:          v1alpha1.IdentityUPDBGroupVersionKind,
+	List:         &v1alpha1.IdentityUPDBList{},
+	Collection:   identity.Collection,
+	BeforeDelete: identity.BeforeDelete,
 	Desired: func(ctx context.Context, api *client.Client, mg *v1alpha1.IdentityUPDB) (map[string]any, error) {
 		return identity.Desired(ctx, api, mg.Spec.ForProvider.IdentityParameters)
 	},

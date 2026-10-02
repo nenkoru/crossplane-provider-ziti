@@ -343,12 +343,33 @@ func (s *Server) replace(w http.ResponseWriter, r *http.Request, collection, id 
 }
 
 func (s *Server) remove(w http.ResponseWriter, collection, id string) {
-	if _, ok := s.collections[collection][id]; !ok {
+	entity, ok := s.collections[collection][id]
+	if !ok {
 		writeError(w, http.StatusNotFound, "NOT_FOUND", nil)
+		return
+	}
+	// Like the real controller, an identity that has hosting settings for a
+	// service that is gone cannot be deleted: the service is "not found".
+	if missing := s.missingService(entity); collection == "identities" && missing != "" {
+		writeError(w, http.StatusNotFound, "NOT_FOUND", map[string]any{"field": "id", "type": "service", "value": missing})
 		return
 	}
 	delete(s.collections[collection], id)
 	writeData(w, http.StatusOK, map[string]any{})
+}
+
+// missingService returns the ID of a service the hosting settings of an
+// identity refer to that does not exist, if any.
+func (s *Server) missingService(identity map[string]any) string {
+	for _, field := range []string{"serviceHostingCosts", "serviceHostingPrecedences"} {
+		perService, _ := identity[field].(map[string]any)
+		for id := range perService {
+			if _, ok := s.collections["services"][id]; !ok {
+				return id
+			}
+		}
+	}
+	return ""
 }
 
 func writeData(w http.ResponseWriter, status int, data any) {

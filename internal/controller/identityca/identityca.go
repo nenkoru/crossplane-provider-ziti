@@ -30,9 +30,10 @@ import (
 
 // Kind describes how an IdentityCA maps to the Ziti API.
 var Kind = generic.Kind[*v1alpha1.IdentityCA]{
-	GVK:        v1alpha1.IdentityCAGroupVersionKind,
-	List:       &v1alpha1.IdentityCAList{},
-	Collection: identity.Collection,
+	GVK:          v1alpha1.IdentityCAGroupVersionKind,
+	List:         &v1alpha1.IdentityCAList{},
+	Collection:   identity.Collection,
+	BeforeDelete: identity.BeforeDelete,
 	Desired: func(ctx context.Context, api *client.Client, mg *v1alpha1.IdentityCA) (map[string]any, error) {
 		return identity.Desired(ctx, api, mg.Spec.ForProvider.IdentityParameters)
 	},

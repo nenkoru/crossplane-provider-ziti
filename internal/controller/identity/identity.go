@@ -42,11 +42,20 @@ const (
 	ConnectionKeyEnrollmentToken = "enrollmentToken"
 )
 
+// BeforeDelete drops the hosting settings an identity has per service. Ziti
+// keeps them when a service is deleted and then refuses to delete the
+// identity because that service does not exist.
+var BeforeDelete = map[string]any{
+	"serviceHostingCosts":       map[string]any{},
+	"serviceHostingPrecedences": map[string]any{},
+}
+
 // Kind describes how an Identity maps to the Ziti API.
 var Kind = generic.Kind[*v1alpha1.Identity]{
-	GVK:        v1alpha1.IdentityGroupVersionKind,
-	List:       &v1alpha1.IdentityList{},
-	Collection: Collection,
+	GVK:          v1alpha1.IdentityGroupVersionKind,
+	List:         &v1alpha1.IdentityList{},
+	Collection:   Collection,
+	BeforeDelete: BeforeDelete,
 	Desired: func(ctx context.Context, api *client.Client, mg *v1alpha1.Identity) (map[string]any, error) {
 		return Desired(ctx, api, mg.Spec.ForProvider)
 	},

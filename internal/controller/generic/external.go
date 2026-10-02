@@ -77,6 +77,11 @@ type Kind[T resource.ModernManaged] struct {
 	// is created, because they are immutable or write-only.
 	CreateOnly func(ctx context.Context, api *client.Client, mg T) (map[string]any, error)
 
+	// BeforeDelete optionally holds fields that are reset right before the
+	// entity is deleted. Ziti does not delete an entity that still refers to
+	// an entity that is gone.
+	BeforeDelete map[string]any
+
 	// Observe copies the supplied Ziti entity into the status of the managed
 	// resource.
 	Observe func(mg T, entity json.RawMessage) error
@@ -248,10 +253,25 @@ func (e *external[T]) Delete(ctx context.Context, mg T) (managed.ExternalDelete,
 		return managed.ExternalDelete{}, nil
 	}
 
-	if err := e.api.Delete(ctx, e.kind.Collection, id); err != nil && !client.IsNotFound(err) {
-		return managed.ExternalDelete{}, errors.Wrap(err, errDelete)
+	err := e.delete(ctx, id)
+	if client.IsNotFound(err) {
+		// Ziti also answers "not found" when something the entity refers to
+		// is gone. The deletion is only done if the entity itself is gone.
+		if _, getErr := e.api.Get(ctx, e.kind.Collection, id); client.IsNotFound(getErr) {
+			return managed.ExternalDelete{}, nil
+		}
 	}
-	return managed.ExternalDelete{}, nil
+	return managed.ExternalDelete{}, errors.Wrap(err, errDelete)
+}
+
+// delete deletes the entity with the supplied ID.
+func (e *external[T]) delete(ctx context.Context, id string) error {
+	if e.kind.BeforeDelete != nil {
+		if err := e.api.Patch(ctx, e.kind.Collection, id, e.kind.BeforeDelete); err != nil {
+			return err
+		}
+	}
+	return e.api.Delete(ctx, e.kind.Collection, id)
 }
 
 func (e *external[T]) Disconnect(_ context.Context) error {

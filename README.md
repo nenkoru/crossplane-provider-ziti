@@ -89,7 +89,9 @@ How to read the table:
   stops reporting the token once it is used; the Secret keeps the last one.
   An expired token is not renewed yet.
 - **Deletion.** Deleting a managed resource deletes the Ziti entity. Set
-  `spec.managementPolicies` to keep it.
+  `spec.managementPolicies` to keep it. The hosting settings an identity has
+  per service are dropped first: Ziti keeps them when a service is deleted
+  and then refuses to delete the identity.
 - **Immutable settings.** The `type` of an identity, `IdentityCA.ottca` and
   `IdentityUPDB.updbUsername` cannot be changed after creation; the API
   server rejects the change.

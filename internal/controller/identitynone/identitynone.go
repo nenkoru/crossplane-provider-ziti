@@ -30,9 +30,10 @@ import (
 
 // Kind describes how an IdentityNone maps to the Ziti API.
 var Kind = generic.Kind[*v1alpha1.IdentityNone]{
-	GVK:        v1alpha1.IdentityNoneGroupVersionKind,
-	List:       &v1alpha1.IdentityNoneList{},
-	Collection: identity.Collection,
+	GVK:          v1alpha1.IdentityNoneGroupVersionKind,
+	List:         &v1alpha1.IdentityNoneList{},
+	Collection:   identity.Collection,
+	BeforeDelete: identity.BeforeDelete,
 	Desired: func(ctx context.Context, api *client.Client, mg *v1alpha1.IdentityNone) (map[string]any, error) {
 		return identity.Desired(ctx, api, mg.Spec.ForProvider)
 	},

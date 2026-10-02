@@ -556,6 +556,69 @@ func TestIdentity(t *testing.T) {
 	}.run(t)
 }
 
+func TestIdentityOutlivesTheServiceItHosts(t *testing.T) {
+	newIdentity := func() *v1alpha1.Identity {
+		return &v1alpha1.Identity{
+			ObjectMeta: meta1("web-server"),
+			Spec: v1alpha1.IdentitySpec{ForProvider: v1alpha1.IdentityParameters{
+				Name:                "web-server",
+				ServiceHostingCosts: map[string]int32{"web": 100},
+			}},
+		}
+	}
+
+	// Ziti keeps the hosting settings for a service that is deleted and then
+	// refuses to delete the identity, answering that the service is not found.
+	cases := map[string]struct {
+		reason  string
+		kind    generic.Kind[*v1alpha1.Identity]
+		wantErr bool
+	}{
+		"HostingSettingsAreDroppedFirst": {
+			reason: "The identity kinds drop the hosting settings before the deletion.",
+			kind:   identity.Kind,
+		},
+		"NotFoundIsNotTakenForDeleted": {
+			reason: "An entity that is still there is not deleted, whatever Ziti reports as not found.",
+			kind: func() generic.Kind[*v1alpha1.Identity] {
+				k := identity.Kind
+				k.BeforeDelete = nil
+				return k
+			}(),
+			wantErr: true,
+		},
+	}
+
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			srv := fake.NewServer()
+			defer srv.Close()
+			srv.Put("services", map[string]any{"id": "svc-1", "name": "web"})
+
+			api, err := srv.Client()
+			if err != nil {
+				t.Fatalf("cannot create client: %v", err)
+			}
+
+			ctx := context.Background()
+			e := generic.NewExternalClient(tc.kind, api)
+			mg := newIdentity()
+			if _, err := e.Create(ctx, mg); err != nil {
+				t.Fatalf("Create(...): %v", err)
+			}
+			srv.Delete("services", "svc-1")
+
+			_, err = e.Delete(ctx, mg)
+			if (err != nil) != tc.wantErr {
+				t.Fatalf("\n%s\nDelete(...): want error %t, got %v", tc.reason, tc.wantErr, err)
+			}
+			if gone := srv.Entity("identities", meta.GetExternalName(mg)) == nil; gone == tc.wantErr {
+				t.Errorf("\n%s\nidentity gone after Delete(...): want %t, got %t", tc.reason, !tc.wantErr, gone)
+			}
+		})
+	}
+}
+
 func TestIdentityCA(t *testing.T) {
 	lifecycle[*v1alpha1.IdentityCA]{
 		kind: identityca.Kind,
