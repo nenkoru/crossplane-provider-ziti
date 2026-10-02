@@ -49,7 +49,7 @@ How to read the table:
   covers the kind against a real OpenZiti controller: the entity is created
   as declared, follows a spec change, is not touched without one, and is
   deleted with its managed resource. CI runs it on every pull request
-  against OpenZiti 2.0.6, and all fifteen kinds that have a controller pass.
+  against OpenZiti 2.0.6, and all twenty-one kinds pass.
 
 ## How it behaves
 
