@@ -1,0 +1,32 @@
+# An OpenID Connect provider whose tokens Ziti accepts. Ziti gets the keys
+# that verify the tokens from jwksEndpoint; a signer without one takes the
+# certificate in certPem and its key ID in kid instead.
+#
+# A token is for the identity whose externalId is the email claim of the
+# token, see ../identity/none.yaml. externalAuthUrl, clientId, scopes and
+# targetToken tell clients how to obtain a token. The auth policy in
+# ../authpolicy/jwt.yaml refers to the signer by its name.
+apiVersion: ziti.crossplane.io/v1alpha1
+kind: ExternalJWTSigner
+metadata:
+  name: corporate-sso
+spec:
+  providerConfigRef:
+    kind: ProviderConfig
+    name: default
+  forProvider:
+    name: corporate-sso
+    issuer: https://sso.example.com/realms/corporate
+    audience: ziti
+    enabled: true
+    jwksEndpoint: https://sso.example.com/realms/corporate/protocol/openid-connect/certs
+    claimsProperty: email
+    useExternalId: true
+    externalAuthUrl: https://sso.example.com/realms/corporate
+    clientId: ziti-clients
+    scopes:
+      - email
+      - profile
+    targetToken: ID
+    tags:
+      team: platform

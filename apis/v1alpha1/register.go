@@ -157,6 +157,20 @@ var (
 	AuthPolicyGroupVersionKind = SchemeGroupVersion.WithKind(AuthPolicyKind)
 )
 
+// CertificateAuthority type metadata.
+var (
+	CertificateAuthorityKind             = reflect.TypeOf(CertificateAuthority{}).Name()
+	CertificateAuthorityGroupKind        = schema.GroupKind{Group: Group, Kind: CertificateAuthorityKind}.String()
+	CertificateAuthorityGroupVersionKind = SchemeGroupVersion.WithKind(CertificateAuthorityKind)
+)
+
+// ExternalJWTSigner type metadata.
+var (
+	ExternalJWTSignerKind             = reflect.TypeOf(ExternalJWTSigner{}).Name()
+	ExternalJWTSignerGroupKind        = schema.GroupKind{Group: Group, Kind: ExternalJWTSignerKind}.String()
+	ExternalJWTSignerGroupVersionKind = SchemeGroupVersion.WithKind(ExternalJWTSignerKind)
+)
+
 func init() {
 	SchemeBuilder.Register(&ProviderConfig{}, &ProviderConfigList{})
 	SchemeBuilder.Register(&ProviderConfigUsage{}, &ProviderConfigUsageList{})
@@ -177,4 +191,6 @@ func init() {
 	SchemeBuilder.Register(&PostureCheckOS{}, &PostureCheckOSList{})
 	SchemeBuilder.Register(&PostureCheckMFA{}, &PostureCheckMFAList{})
 	SchemeBuilder.Register(&AuthPolicy{}, &AuthPolicyList{})
+	SchemeBuilder.Register(&CertificateAuthority{}, &CertificateAuthorityList{})
+	SchemeBuilder.Register(&ExternalJWTSigner{}, &ExternalJWTSignerList{})
 }

@@ -45,6 +45,24 @@ const (
 
 var nameFilter = regexp.MustCompile(`^name="((?:[^"\\]|\\.)*)"$`)
 
+// defaults are the values the real controller stores in place of an empty
+// one.
+var defaults = map[string]map[string]any{
+	"cas": {"identityNameFormat": "[caName]-[commonName]"},
+	"external-jwt-signers": {
+		"claimsProperty":           "/sub",
+		"targetToken":              "ACCESS",
+		"enrollNameClaimsSelector": "/sub",
+		"enrollAuthPolicyId":       "default",
+	},
+}
+
+// unchangeable are the fields the real controller keeps when an entity is
+// replaced: they cannot be changed, or only the controller sets them.
+var unchangeable = map[string][]string{
+	"cas": {"certPem", "fingerprint", "isVerified", "verificationToken"},
+}
+
 // Server is a fake Ziti controller. Entities are stored as the JSON documents
 // that were posted to it, plus an id and the time they were created.
 type Server struct {
@@ -276,9 +294,20 @@ func (s *Server) create(w http.ResponseWriter, r *http.Request, collection strin
 			}
 		}
 	}
-	if collection == "edge-routers" {
+	switch collection {
+	case "edge-routers":
 		entity["enrollmentJwt"] = "jwt-for-" + fmt.Sprint(entity["name"])
+	case "cas":
+		// A certificate authority starts out unverified, with the token its
+		// owner verifies it with.
+		entity["fingerprint"] = "fingerprint-of-" + fmt.Sprint(entity["name"])
+		entity["isVerified"] = false
+		entity["verificationToken"] = "token-for-" + fmt.Sprint(entity["name"])
+	case "external-jwt-signers":
+		// Like the real controller, the tags of a new signer are ignored.
+		delete(entity, "tags")
 	}
+	setDefaults(collection, entity)
 
 	s.put(collection, entity)
 	if s.loseCreate {
@@ -317,6 +346,9 @@ func (s *Server) patch(w http.ResponseWriter, r *http.Request, collection, id st
 		delete(fields, "encryptionRequired")
 	case "auth-policies":
 		delete(fields, "primary")
+	case "cas", "external-jwt-signers":
+		// Nor does a PATCH remove a setting: it ignores fields that are null.
+		maps.DeleteFunc(fields, func(_ string, v any) bool { return v == nil })
 	}
 	maps.Copy(entity, fields)
 	writeData(w, http.StatusOK, map[string]any{})
@@ -338,6 +370,12 @@ func (s *Server) replace(w http.ResponseWriter, r *http.Request, collection, id 
 	if created, ok := old["createdAt"]; ok {
 		entity["createdAt"] = created
 	}
+	for _, field := range unchangeable[collection] {
+		if v, ok := old[field]; ok {
+			entity[field] = v
+		}
+	}
+	setDefaults(collection, entity)
 	s.put(collection, entity)
 	writeData(w, http.StatusOK, map[string]any{})
 }
@@ -370,6 +408,16 @@ func (s *Server) missingService(identity map[string]any) string {
 		}
 	}
 	return ""
+}
+
+// setDefaults fills in the defaults of the controller for the fields of an
+// entity that are empty.
+func setDefaults(collection string, entity map[string]any) {
+	for field, value := range defaults[collection] {
+		if v := entity[field]; v == nil || v == "" {
+			entity[field] = value
+		}
+	}
 }
 
 func writeData(w http.ResponseWriter, status int, data any) {
