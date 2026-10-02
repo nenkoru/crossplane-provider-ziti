@@ -205,6 +205,13 @@ func (c *Client) Delete(ctx context.Context, collection, id string) error {
 	return err
 }
 
+// Act asks the controller to carry out an action on an entity, such as
+// "refresh" on an enrollment. An action that takes no settings has a nil body.
+func (c *Client) Act(ctx context.Context, collection, id, action string, body any) error {
+	_, err := c.do(ctx, http.MethodPost, entityPath(collection, id)+"/"+action, body)
+	return err
+}
+
 // FindByName returns the entity with the supplied name, which is unique
 // within a collection, or nil if there is no such entity.
 func (c *Client) FindByName(ctx context.Context, collection, name string) (json.RawMessage, error) {

@@ -1,0 +1,19 @@
+# Identities with this policy authenticate with a token of the external JWT
+# signer in ../externaljwtsigner/externaljwtsigner.yaml and with nothing else.
+# allowedSigners and secondary.requireExtJwtSigner take names or IDs of
+# signers; without allowedSigners the tokens of every signer are accepted.
+apiVersion: ziti.crossplane.io/v1alpha1
+kind: AuthPolicy
+metadata:
+  name: corporate-sso-only
+spec:
+  providerConfigRef:
+    kind: ProviderConfig
+    name: default
+  forProvider:
+    name: corporate-sso-only
+    primary:
+      extJwt:
+        allowed: true
+        allowedSigners:
+          - corporate-sso

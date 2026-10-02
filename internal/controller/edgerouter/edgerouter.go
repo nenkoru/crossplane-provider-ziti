@@ -21,6 +21,8 @@ package edgerouter
 import (
 	"context"
 	"encoding/json"
+	"fmt"
+	"time"
 
 	"github.com/crossplane/crossplane-runtime/v2/pkg/reconciler/managed"
 
@@ -43,6 +45,7 @@ var Kind = generic.Kind[*v1alpha1.EdgeRouter]{
 		return generic.Unmarshal(entity, &mg.Status.AtProvider)
 	},
 	ConnectionDetails: connectionDetails,
+	Repair:            renewEnrollment,
 }
 
 func desired(_ context.Context, _ *client.Client, mg *v1alpha1.EdgeRouter) (map[string]any, error) {
@@ -78,4 +81,44 @@ func connectionDetails(raw json.RawMessage) (managed.ConnectionDetails, error) {
 		return nil, nil
 	}
 	return managed.ConnectionDetails{ConnectionKeyEnrollmentToken: []byte(e.EnrollmentJWT)}, nil
+}
+
+// renewEnrollment finds out whether an edge router is left without a usable
+// enrollment token: it has not enrolled, and its enrollment has expired or
+// is gone. The function it then returns has Ziti enroll the router anew,
+// which gives it a new token that is valid for as long as the controller is
+// configured to make it.
+//
+// Enrolling a router anew that has enrolled takes its certificate away and
+// disconnects it. Only a router of which Ziti says that it is not verified
+// and that has no certificate is taken not to have enrolled.
+func renewEnrollment(api *client.Client, _ *v1alpha1.EdgeRouter, raw json.RawMessage) (string, func(context.Context) error, error) {
+	var e struct {
+		ID                  string `json:"id"`
+		IsVerified          *bool  `json:"isVerified"`
+		Fingerprint         string `json:"fingerprint"`
+		EnrollmentJWT       string `json:"enrollmentJwt"`
+		EnrollmentExpiresAt string `json:"enrollmentExpiresAt"`
+	}
+	if err := json.Unmarshal(raw, &e); err != nil {
+		return "", nil, err
+	}
+	if e.IsVerified == nil || *e.IsVerified || e.Fingerprint != "" {
+		return "", nil, nil
+	}
+
+	defect := "the edge router has not enrolled and has no enrollment"
+	if e.EnrollmentJWT != "" {
+		expiry, err := time.Parse(time.RFC3339, e.EnrollmentExpiresAt)
+		if err != nil {
+			return "", nil, err
+		}
+		if !generic.Expired(api, expiry) {
+			return "", nil, nil
+		}
+		defect = fmt.Sprintf("the edge router has not enrolled and its enrollment expired at %s", e.EnrollmentExpiresAt)
+	}
+	return defect, func(ctx context.Context) error {
+		return api.Act(ctx, "edge-routers", e.ID, "re-enroll", nil)
+	}, nil
 }

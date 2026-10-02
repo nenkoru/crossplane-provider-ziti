@@ -42,6 +42,13 @@ var Kind = generic.Kind[*v1alpha1.IdentityCA]{
 		return identity.Observe(raw, &mg.Status.AtProvider)
 	},
 	ConnectionDetails: identity.ConnectionDetails,
+	Repair: func(api *client.Client, mg *v1alpha1.IdentityCA, raw json.RawMessage) (string, func(context.Context) error, error) {
+		p := mg.Spec.ForProvider
+		return identity.RenewEnrollment(api, raw, p.IdentityParameters, "ottca", func(ctx context.Context) (map[string]any, error) {
+			ca, err := api.ResolveID(ctx, "cas", p.Ottca)
+			return map[string]any{"caId": ca}, err
+		})
+	},
 }
 
 func createOnly(ctx context.Context, api *client.Client, mg *v1alpha1.IdentityCA) (map[string]any, error) {

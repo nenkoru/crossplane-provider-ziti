@@ -4,7 +4,7 @@ kind: CustomResourceDefinition
 metadata:
   annotations:
     controller-gen.kubebuilder.io/version: v0.20.0
-  name: identitycas.ziti.crossplane.io
+  name: externaljwtsigners.ziti.crossplane.io
 spec:
   group: ziti.crossplane.io
   names:
@@ -12,10 +12,10 @@ spec:
     - crossplane
     - managed
     - ziti
-    kind: IdentityCA
-    listKind: IdentityCAList
-    plural: identitycas
-    singular: identityca
+    kind: ExternalJWTSigner
+    listKind: ExternalJWTSignerList
+    plural: externaljwtsigners
+    singular: externaljwtsigner
   scope: Namespaced
   versions:
   - additionalPrinterColumns:
@@ -35,10 +35,9 @@ spec:
     schema:
       openAPIV3Schema:
         description: |-
-          IdentityCA is a Ziti identity that enrolls with a one-time token and a
-          client certificate issued by a third-party certificate authority (OTT CA).
-          The enrollment token is published to the connection secret under the key
-          enrollmentToken until the identity enrolls.
+          ExternalJWTSigner is an issuer of JSON Web Tokens, such as an OpenID
+          Connect provider, whose tokens Ziti accepts for authentication. Auth
+          policies refer to it by its name or ID.
         properties:
           apiVersion:
             description: |-
@@ -58,114 +57,128 @@ spec:
           metadata:
             type: object
           spec:
-            description: IdentityCASpec defines the desired state of an IdentityCA.
+            description: ExternalJWTSignerSpec defines the desired state of an ExternalJWTSigner.
             properties:
               forProvider:
                 description: |-
-                  IdentityCAParameters define the desired state of a Ziti identity that
-                  enrolls with a certificate of a certificate authority.
+                  ExternalJWTSignerParameters define the desired state of a Ziti external
+                  JWT signer. The keys that verify its tokens come from jwksEndpoint or from
+                  certPem.
                 properties:
-                  appData:
-                    additionalProperties:
-                      type: string
-                    description: AppData is a map of data for the applications that
-                      use the identity.
-                    type: object
-                  authPolicyId:
-                    description: |-
-                      AuthPolicyID is the name or ID of the auth policy that governs how the
-                      identity authenticates. Ziti assigns its default auth policy when this
-                      is not set.
-                    type: string
-                  defaultHostingCost:
-                    description: DefaultHostingCost is the cost of the terminators
-                      the identity hosts.
-                    format: int32
-                    maximum: 65535
-                    minimum: 0
-                    type: integer
-                  defaultHostingPrecedence:
-                    description: |-
-                      DefaultHostingPrecedence is the precedence of the terminators the
-                      identity hosts.
-                    enum:
-                    - default
-                    - required
-                    - failed
-                    type: string
-                  enrollmentDuration:
-                    description: |-
-                      EnrollmentDuration is how long an enrollment token is valid that
-                      replaces one that expired or is gone, 180m when this is not set. It
-                      does not apply to the first token, which is valid for as long as the
-                      Ziti controller is configured to make it, and an identity without an
-                      enrollment has no use for it.
-                    type: string
-                    x-kubernetes-validations:
-                    - message: enrollmentDuration must be at least 5m
-                      rule: duration(self) >= duration('5m')
-                  externalId:
-                    description: ExternalID identifies the identity to an external
-                      JWT signer.
-                    type: string
-                  isAdmin:
-                    default: false
-                    description: IsAdmin grants admin privileges to the identity.
-                    type: boolean
-                  name:
-                    description: Name of the identity.
-                    type: string
-                  ottca:
-                    description: |-
-                      Ottca is the name or ID of the certificate authority whose certificates
-                      the identity may enroll with. It cannot be changed after creation.
+                  audience:
+                    description: Audience is the aud claim a token must have to be
+                      accepted.
                     minLength: 1
                     type: string
-                    x-kubernetes-validations:
-                    - message: ottca cannot be changed after creation
-                      rule: self == oldSelf
-                  roleAttributes:
-                    description: RoleAttributes for the identity.
+                  certPem:
+                    description: |-
+                      CertPem is the PEM encoded certificate that verifies the tokens of the
+                      signer, for a signer without a JSON Web Key Set.
+                    minLength: 1
+                    type: string
+                  claimsProperty:
+                    description: |-
+                      ClaimsProperty is the claim of a token that tells which identity it is
+                      for. Ziti takes the subject if it is not set.
+                    minLength: 1
+                    type: string
+                  clientId:
+                    description: ClientID is the OAuth client ID clients obtain a
+                      token with.
+                    minLength: 1
+                    type: string
+                  enabled:
+                    description: Enabled makes Ziti accept the tokens of this signer.
+                    type: boolean
+                  enrollAttributeClaimsSelector:
+                    description: |-
+                      EnrollAttributeClaimsSelector is the claim of a token that holds the
+                      role attributes of the identity an enrollment creates.
+                    type: string
+                  enrollAuthPolicyId:
+                    description: |-
+                      EnrollAuthPolicyID is the name or ID of the auth policy of the
+                      identities an enrollment creates. Ziti takes the default auth policy
+                      if it is not set.
+                    minLength: 1
+                    type: string
+                  enrollNameClaimsSelector:
+                    description: |-
+                      EnrollNameClaimsSelector is the claim of a token that names the
+                      identity an enrollment creates. Ziti takes the subject if it is not
+                      set.
+                    minLength: 1
+                    type: string
+                  enrollToCertEnabled:
+                    description: |-
+                      EnrollToCertEnabled lets the holder of a token of this signer enroll,
+                      which creates an identity that authenticates with a certificate.
+                    type: boolean
+                  enrollToTokenEnabled:
+                    description: |-
+                      EnrollToTokenEnabled lets the holder of a token of this signer enroll,
+                      which creates an identity that authenticates with tokens of this
+                      signer.
+                    type: boolean
+                  externalAuthUrl:
+                    description: ExternalAuthURL is the URL clients obtain a token
+                      of this signer from.
+                    minLength: 1
+                    type: string
+                  issuer:
+                    description: |-
+                      Issuer is the iss claim of the tokens of this signer. No two signers
+                      may have the same issuer.
+                    minLength: 1
+                    type: string
+                  jwksEndpoint:
+                    description: JwksEndpoint is the URL of the JSON Web Key Set of
+                      the signer.
+                    pattern: ^https?://.+
+                    type: string
+                  kid:
+                    description: |-
+                      Kid is the key ID of the certificate in certPem: the kid header of the
+                      tokens it verifies.
+                    minLength: 1
+                    type: string
+                  name:
+                    description: Name of the external JWT signer.
+                    type: string
+                  scopes:
+                    description: Scopes are the OAuth scopes clients request a token
+                      with.
                     items:
                       type: string
                     type: array
-                  serviceHostingCosts:
-                    additionalProperties:
-                      format: int32
-                      type: integer
-                    description: |-
-                      ServiceHostingCosts overrides the hosting cost per service. Keys are
-                      service names or IDs.
-                    type: object
-                  serviceHostingPrecedences:
-                    additionalProperties:
-                      type: string
-                    description: |-
-                      ServiceHostingPrecedences overrides the hosting precedence (default,
-                      required, failed) per service. Keys are service names or IDs.
-                    type: object
+                    x-kubernetes-list-type: set
                   tags:
                     additionalProperties:
                       type: string
                     description: Tags is a map of tags.
                     type: object
-                  type:
-                    default: Default
-                    description: Type of the identity. It cannot be changed after
-                      creation.
+                  targetToken:
+                    default: ACCESS
+                    description: |-
+                      TargetToken is the token clients present to Ziti: the access token or
+                      the ID token.
                     enum:
-                    - Default
-                    - User
-                    - Device
-                    - Service
+                    - ACCESS
+                    - ID
                     type: string
-                    x-kubernetes-validations:
-                    - message: type cannot be changed after creation
-                      rule: self == oldSelf
+                  useExternalId:
+                    description: |-
+                      UseExternalID looks the identity up by its externalId instead of its
+                      ID.
+                    type: boolean
                 required:
+                - audience
+                - issuer
                 - name
-                - ottca
                 type: object
+                x-kubernetes-validations:
+                - message: exactly one of jwksEndpoint and certPem is required
+                  rule: has(self.jwksEndpoint) != has(self.certPem)
               managementPolicies:
                 default:
                 - '*'
@@ -225,62 +238,70 @@ spec:
             - forProvider
             type: object
           status:
-            description: IdentityCAStatus defines the observed state of an IdentityCA.
+            description: |-
+              ExternalJWTSignerStatus defines the observed state of an
+              ExternalJWTSigner.
             properties:
               atProvider:
-                description: IdentityObservation keeps the observed state of an identity
-                  of any kind.
+                description: ExternalJWTSignerObservation keeps the observed state.
                 properties:
-                  appData:
-                    additionalProperties:
-                      type: string
-                    type: object
-                  authPolicyId:
+                  audience:
+                    type: string
+                  claimsProperty:
+                    type: string
+                  clientId:
+                    type: string
+                  commonName:
+                    description: |-
+                      CommonName, Fingerprint, NotBefore and NotAfter describe the
+                      certificate of a signer that has one.
                     type: string
                   createdAt:
                     type: string
-                  defaultHostingCost:
-                    format: int32
-                    type: integer
-                  defaultHostingPrecedence:
-                    type: string
-                  enrolled:
-                    description: Enrolled is true once the identity has used its enrollment
-                      token.
+                  enabled:
                     type: boolean
-                  enrollmentExpiresAt:
-                    description: EnrollmentExpiresAt is when the enrollment token
-                      expires.
+                  enrollAttributeClaimsSelector:
                     type: string
-                  externalId:
+                  enrollAuthPolicyId:
+                    type: string
+                  enrollNameClaimsSelector:
+                    type: string
+                  enrollToCertEnabled:
+                    type: boolean
+                  enrollToTokenEnabled:
+                    type: boolean
+                  externalAuthUrl:
+                    type: string
+                  fingerprint:
                     type: string
                   id:
                     type: string
-                  isAdmin:
-                    type: boolean
+                  issuer:
+                    type: string
+                  jwksEndpoint:
+                    type: string
+                  kid:
+                    type: string
                   name:
                     type: string
-                  roleAttributes:
+                  notAfter:
+                    type: string
+                  notBefore:
+                    type: string
+                  scopes:
                     items:
                       type: string
                     type: array
-                  serviceHostingCosts:
-                    additionalProperties:
-                      format: int32
-                      type: integer
-                    type: object
-                  serviceHostingPrecedences:
-                    additionalProperties:
-                      type: string
-                    type: object
                   tags:
                     additionalProperties:
                       type: string
                     type: object
-                  typeId:
+                  targetToken:
                     type: string
                   updatedAt:
                     type: string
+                  useExternalId:
+                    type: boolean
                 type: object
               conditions:
                 description: Conditions of the resource.

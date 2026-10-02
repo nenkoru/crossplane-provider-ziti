@@ -46,6 +46,7 @@ const (
 	errObserve = "cannot observe the external resource"
 	errCreate  = "cannot create the external resource"
 	errUpdate  = "cannot update the external resource"
+	errRepair  = "cannot repair the external resource"
 	errDelete  = "cannot delete the external resource"
 )
 
@@ -89,6 +90,14 @@ type Kind[T resource.ModernManaged] struct {
 	// ConnectionDetails optionally extracts connection details from the
 	// supplied Ziti entity.
 	ConnectionDetails func(entity json.RawMessage) (managed.ConnectionDetails, error)
+
+	// Repair optionally finds what is wrong with the supplied Ziti entity
+	// that no field of Desired shows, such as an enrollment token that has
+	// expired. It returns a description of the defect, which is empty if
+	// there is none, and the function that puts it right. A managed resource
+	// whose entity has a defect is not up to date, and its update calls that
+	// function after it has looked at the entity again.
+	Repair func(api *client.Client, mg T, entity json.RawMessage) (defect string, repair func(ctx context.Context) error, err error)
 }
 
 // A Connecter produces a Ziti client for a managed resource.
@@ -147,7 +156,7 @@ func (e *external[T]) Observe(ctx context.Context, mg T) (managed.ExternalObserv
 	}
 
 	o := managed.ExternalObservation{ResourceExists: true}
-	if o.Diff, err = e.diff(ctx, mg, entity); err != nil {
+	if o.Diff, err = e.diff(ctx, mg, entity, raw); err != nil {
 		return managed.ExternalObservation{}, err
 	}
 	o.ResourceUpToDate = o.Diff == ""
@@ -163,8 +172,9 @@ func (e *external[T]) Observe(ctx context.Context, mg T) (managed.ExternalObserv
 }
 
 // diff describes the first field in which the entity differs from the desired
-// state of the managed resource. It is empty if the entity is up to date.
-func (e *external[T]) diff(ctx context.Context, mg T, entity map[string]any) (string, error) {
+// state of the managed resource or, if there is none, the defect the kind
+// finds in the entity. It is empty if the entity is up to date.
+func (e *external[T]) diff(ctx context.Context, mg T, entity map[string]any, raw json.RawMessage) (string, error) {
 	desired, err := e.kind.Desired(ctx, e.api, mg)
 	if err != nil {
 		return "", errors.Wrap(err, errDesired)
@@ -174,11 +184,14 @@ func (e *external[T]) diff(ctx context.Context, mg T, entity map[string]any) (st
 		return "", errors.Wrap(err, errDesired)
 	}
 
-	field, ok := firstDifference(body, entity)
-	if !ok {
+	if field, ok := firstDifference(body, entity); ok {
+		return fmt.Sprintf("field %q differs: desired %v, observed %v", field, body[field], entity[field]), nil
+	}
+	if e.kind.Repair == nil {
 		return "", nil
 	}
-	return fmt.Sprintf("field %q differs: desired %v, observed %v", field, body[field], entity[field]), nil
+	defect, _, err := e.kind.Repair(e.api, mg, raw)
+	return defect, errors.Wrap(err, errObserve)
 }
 
 // get returns the entity with the supplied ID, both parsed and as JSON, with
@@ -244,7 +257,25 @@ func (e *external[T]) Update(ctx context.Context, mg T) (managed.ExternalUpdate,
 	if err := update(ctx, e.kind.Collection, meta.GetExternalName(mg), desired); err != nil {
 		return managed.ExternalUpdate{}, errors.Wrap(err, errUpdate)
 	}
-	return managed.ExternalUpdate{}, nil
+	return managed.ExternalUpdate{}, errors.Wrap(e.repair(ctx, mg), errRepair)
+}
+
+// repair puts right the defect the entity has, if any. The entity is read
+// again: what was wrong with it when it was observed may no longer be.
+func (e *external[T]) repair(ctx context.Context, mg T) error {
+	if e.kind.Repair == nil {
+		return nil
+	}
+
+	_, raw, err := e.get(ctx, meta.GetExternalName(mg))
+	if err != nil {
+		return err
+	}
+	defect, repair, err := e.kind.Repair(e.api, mg, raw)
+	if err != nil || defect == "" {
+		return err
+	}
+	return repair(ctx)
 }
 
 func (e *external[T]) Delete(ctx context.Context, mg T) (managed.ExternalDelete, error) {

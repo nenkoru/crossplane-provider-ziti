@@ -77,6 +77,18 @@ POSTURE_CHECK_EXAMPLES=(
 	examples/posturecheck/multiprocess.yaml
 )
 
+# The certificate authority, whose manifest gets a certificate that is made
+# for the test, see apply_ca.
+CA_EXAMPLE=examples/certificateauthority/certificateauthority.yaml
+
+# The external JWT signer, and what refers to it and to the certificate
+# authority by name.
+AUTHENTICATION_EXAMPLES=(
+	examples/externaljwtsigner/externaljwtsigner.yaml
+	examples/authpolicy/jwt.yaml
+	examples/identity/ca.yaml
+)
+
 export KUBECONFIG="${WORK}/kubeconfig"
 
 step() { printf '\n>>> %s\n' "$*"; }
@@ -108,6 +120,14 @@ ziti_get() {
 ziti_post() {
 	curl -sk --fail -X POST -H "zt-session: ${ZITI_TOKEN}" -H 'Content-Type: application/json' \
 		-d "$2" "${ZITI_API}/$1" | jq -er '.data.id'
+}
+
+# ziti_refresh <enrollment id> <seconds> has Ziti give an enrollment a new
+# token behind the provider's back, one that expires so many seconds from now.
+ziti_refresh() {
+	curl -sk --fail -X POST -H "zt-session: ${ZITI_TOKEN}" -H 'Content-Type: application/json' \
+		-d "$(jq -n --argjson seconds "$2" '{expiresAt: (now + $seconds | todate)}')" \
+		"${ZITI_API}/enrollments/$1/refresh" >/dev/null
 }
 
 # ziti_delete <collection> <id> deletes an entity behind the provider's back.
@@ -194,8 +214,8 @@ check_entity() {
 	if entity_matches "${collection}" "${id}" "${filter}" >/dev/null; then
 		ok "${plural}/${name}: Ziti entity is as declared"
 	else
-		# Enrollment tokens are left out of the dump.
-		ziti_get "${collection}" "${id}" | jq 'del(.enrollment, .enrollmentJwt, .enrollmentToken)' >&2
+		# Enrollment and verification tokens are left out of the dump.
+		ziti_get "${collection}" "${id}" | jq 'del(.enrollment, .enrollmentJwt, .enrollmentToken, .verificationToken)' >&2
 		fail "${plural}/${name}: Ziti entity does not satisfy: ${filter}"
 	fi
 }
@@ -217,6 +237,53 @@ check_token() {
 	*.*.*) ok "secret/${secret}: enrollment token is a JWT" ;;
 	*) fail "secret/${secret}: enrollment token is not a JWT" ;;
 	esac
+}
+
+# token_digest <secret> prints a digest of the enrollment token in the
+# connection secret. It tells tokens apart without showing them.
+token_digest() {
+	kubectl get secret "$1" -o jsonpath='{.data.enrollmentToken}' | base64 -d | openssl dgst -sha256 -r | cut -d' ' -f1
+}
+
+# token_is_current <secret> <collection> <id> <jq path of the token> succeeds
+# if the connection secret holds the enrollment token Ziti reports.
+token_is_current() {
+	local published reported
+	published="$(kubectl get secret "$1" -o jsonpath='{.data.enrollmentToken}' | base64 -d)" || return 1
+	reported="$(ziti_get "$2" "$3" | jq -er "$4")" || return 1
+	[ "${published}" = "${reported}" ]
+}
+
+# expiry_is_current <plural> <name> <collection> <jq path of the expiry>
+# succeeds if the status of the managed resource says when the enrollment
+# token Ziti reports expires.
+expiry_is_current() {
+	local shown reported
+	shown="$(kubectl get "$1.${GROUP}" "$2" -o jsonpath='{.status.atProvider.enrollmentExpiresAt}')" || return 1
+	reported="$(ziti_get "$3" "$(mr_id "$1" "$2")" | jq -er "$4")" || return 1
+	[ "${shown}" = "${reported}" ]
+}
+
+# expires_in <collection> <id> <jq path of the expiry> <min> <max> succeeds
+# if the time lies more than min and at most max seconds ahead.
+expires_in() {
+	ziti_get "$1" "$2" | jq -e --argjson min "$4" --argjson max "$5" \
+		"($3 | sub(\"[.][0-9]+Z\$\"; \"Z\") | fromdate) - now | . > \$min and . <= \$max"
+}
+
+# expect_renewed <plural> <name> <collection> <jq path of the token> <jq path
+# of the expiry> <digest of the old token> checks that the connection secret
+# <name>-enrollment holds a new enrollment token, the one Ziti reports, and
+# that the status says when it expires.
+expect_renewed() {
+	local plural="$1" name="$2" collection="$3" token="$4" expiry="$5" old="$6" secret="$2-enrollment" id digest
+	id="$(mr_id "${plural}" "${name}")"
+	eventually "secret/${secret}: follows the token Ziti reports" token_is_current "${secret}" "${collection}" "${id}" "${token}"
+	check_token "${secret}" "${collection}" "${id}" "${token}"
+	digest="$(token_digest "${secret}")" || fail "cannot read secret/${secret}"
+	[ "${digest}" != "${old}" ] || fail "secret/${secret}: still holds the old enrollment token"
+	ok "secret/${secret}: the enrollment token is a new one"
+	eventually "${plural}/${name}: status says when the new token expires" expiry_is_current "${plural}" "${name}" "${collection}" "${expiry}"
 }
 
 # stamps <collection> <id>... prints the last update time of each entity.
@@ -272,6 +339,29 @@ delete() {
 	local args=()
 	for f in "$@"; do args+=(-f "${ROOT}/${f}"); done
 	kubectl delete --wait --timeout="${TIMEOUT}s" "${args[@]}"
+}
+
+# apply_ca <certificate file> applies the certificate authority example with
+# that certificate in place of its placeholder. The certificate is made when
+# the test runs: one in the repository would expire some day, and the test
+# needs its private key, which must not be published.
+apply_ca() {
+	kubectl create --dry-run=client -o json -f "${ROOT}/${CA_EXAMPLE}" |
+		jq --rawfile pem "$1" '.spec.forProvider.certPem = $pem' |
+		kubectl apply -f -
+}
+
+# status_is <plural> <name> <field> <value> succeeds if the managed resource
+# reports that value in the field of status.atProvider.
+status_is() {
+	[ "$(kubectl get "$1.${GROUP}" "$2" -o jsonpath="{.status.atProvider.$3}")" = "$4" ]
+}
+
+# mr_gone <plural> <name> succeeds if the managed resource no longer exists.
+mr_gone() {
+	local found
+	found="$(kubectl get "$1.${GROUP}" "$2" --ignore-not-found -o name)" || return 1
+	[ -z "${found}" ]
 }
 
 # ------------------------------------------------------------------------------
@@ -467,14 +557,13 @@ EOF
 }
 
 test_extended() {
-	step "Creating a certificate authority in Ziti for the identity that enrolls with its certificates"
+	step "Creating the certificate authority of the identity that enrolls with its certificates"
 	local ca
 	openssl req -x509 -newkey rsa:2048 -nodes -days 1 -subj '/CN=provider-ziti e2e CA' \
 		-keyout "${WORK}/ca.key" -out "${WORK}/ca.crt" 2>/dev/null || fail "cannot create a CA certificate"
-	ca="$(ziti_post cas "$(jq -n --rawfile pem "${WORK}/ca.crt" \
-		'{name: "device-ca", certPem: $pem, isAuthEnabled: true, isAutoCaEnrollmentEnabled: false, isOttCaEnrollmentEnabled: true, identityRoles: []}')")" ||
-		fail "cannot create a certificate authority in Ziti"
-	ok "certificate authority device-ca exists"
+	apply_ca "${WORK}/ca.crt"
+	kubectl wait --for=condition=Ready --timeout="${TIMEOUT}s" "certificateauthorities.${GROUP}/device-ca"
+	ca="$(mr_id certificateauthorities device-ca)"
 
 	step "Creating the remaining kinds"
 	apply "${EXTENDED_EXAMPLES[@]}"
@@ -556,7 +645,11 @@ test_extended() {
 	expect_settled "remaining entities stay untouched" extended_stamps
 
 	step "Deleting the remaining kinds"
+	# The certificate authority goes at the same time as the identity that
+	# refers to it.
+	kubectl delete --wait=false "certificateauthorities.${GROUP}/device-ca"
 	delete "${EXTENDED_EXAMPLES[@]}"
+	eventually "certificate authority is deleted along with the identity that refers to it" mr_gone certificateauthorities device-ca
 	expect_gone "edge router is gone" edge-routers public-router
 	expect_gone "edge router policy is gone" edge-router-policies web-clients-public-routers
 	expect_gone "service edge router policy is gone" service-edge-router-policies web-services-public-routers
@@ -568,6 +661,359 @@ test_extended() {
 	expect_gone "CA identity is gone" identities sensor
 	expect_gone "password identity is gone" identities operator
 	expect_gone "identity without an enrollment is gone" identities sso-user
+	expect_gone "certificate authority is gone" cas device-ca
+}
+
+test_authentication() {
+	step "Creating a certificate authority, an external JWT signer and what refers to them"
+	openssl req -x509 -newkey rsa:2048 -nodes -days 1 -subj '/CN=provider-ziti e2e device CA' \
+		-keyout "${WORK}/device-ca.key" -out "${WORK}/device-ca.crt" 2>/dev/null || fail "cannot create a CA certificate"
+	# The auth policy and the identity are created along with what they refer
+	# to by name, and are retried until that exists.
+	apply_ca "${WORK}/device-ca.crt"
+	apply "${AUTHENTICATION_EXAMPLES[@]}"
+	kubectl wait --for=condition=Ready --timeout="${TIMEOUT}s" "certificateauthorities.${GROUP}/device-ca"
+	wait_ready "${AUTHENTICATION_EXAMPLES[@]}"
+
+	local ca signer policy sensor fingerprint token refusal enrollment published
+	ca="$(mr_id certificateauthorities device-ca)"
+	signer="$(mr_id externaljwtsigners corporate-sso)"
+	policy="$(mr_id authpolicies corporate-sso-only)"
+	sensor="$(mr_id identitycas sensor)"
+	# Ziti identifies a certificate by its SHA-1 fingerprint in lower case.
+	fingerprint="$(openssl x509 -in "${WORK}/device-ca.crt" -noout -fingerprint -sha1 | sed -e 's/.*=//' -e 's/://g' | tr 'A-F' 'a-f')"
+	[ -n "${fingerprint}" ] || fail "cannot compute the fingerprint of the CA certificate"
+
+	step "Checking them in Ziti"
+	check_entity certificateauthorities device-ca cas \
+		".fingerprint == \"${fingerprint}\" and .isVerified == false and .isAuthEnabled == true and .isOttCaEnrollmentEnabled == true and .isAutoCaEnrollmentEnabled == false and .identityNameFormat == \"[caName]-[commonName]\" and (.identityRoles | length) == 0 and .externalIdClaim == null and .tags.team == \"platform\""
+	expect "certificate authority has the certificate of the test" \
+		"$(ziti_get cas "${ca}" | jq -r '.certPem')" "$(cat "${WORK}/device-ca.crt")"
+	# What the owner of the certificate authority needs to verify it.
+	expect "certificateauthorities/device-ca: status has the fingerprint" \
+		"$(kubectl get "certificateauthorities.${GROUP}" device-ca -o jsonpath='{.status.atProvider.fingerprint}')" "${fingerprint}"
+	expect "certificateauthorities/device-ca: status says it is not verified" \
+		"$(kubectl get "certificateauthorities.${GROUP}" device-ca -o jsonpath='{.status.atProvider.isVerified}')" ""
+	token="$(kubectl get "certificateauthorities.${GROUP}" device-ca -o jsonpath='{.status.atProvider.verificationToken}')"
+	# Never print the token itself.
+	if [ -n "${token}" ] && [ "${token}" = "$(ziti_get cas "${ca}" | jq -r '.verificationToken')" ]; then
+		ok "certificateauthorities/device-ca: status has the verification token"
+	else
+		fail "certificateauthorities/device-ca: status.atProvider.verificationToken is not the token Ziti reports"
+	fi
+	check_entity externaljwtsigners corporate-sso external-jwt-signers \
+		'.issuer == "https://sso.example.com/realms/corporate" and .audience == "ziti" and .enabled == true and .jwksEndpoint == "https://sso.example.com/realms/corporate/protocol/openid-connect/certs" and .certPem == null and .kid == null and .claimsProperty == "email" and .useExternalId == true and .externalAuthUrl == "https://sso.example.com/realms/corporate" and .clientId == "ziti-clients" and (.scopes | sort) == ["email", "profile"] and .targetToken == "ID" and .tags == {"team": "platform"}'
+	check_entity authpolicies corporate-sso-only auth-policies \
+		".primary.extJwt.allowed == true and .primary.extJwt.allowedSigners == [\"${signer}\"] and .primary.cert.allowed == false and .primary.updb.allowed == false and .secondary.requireExtJwtSigner == null"
+	check_entity identitycas sensor identities ".enrollment.ottca.caId == \"${ca}\""
+
+	step "Updating them updates Ziti"
+	patch certificateauthorities device-ca \
+		'{"isAuthEnabled": false, "isAutoCaEnrollmentEnabled": true, "identityRoles": ["sensors", "e2e"], "identityNameFormat": "[caName]-[requestedName]", "externalIdClaim": {"location": "SAN_URI", "matcher": "SCHEME", "matcherCriteria": "spiffe", "parser": "SPLIT", "parserCriteria": "/", "index": 2}, "tags": {"env": "e2e", "team": null}}'
+	eventually "certificate authority is updated in Ziti" entity_matches cas "${ca}" \
+		'.isAuthEnabled == false and .isAutoCaEnrollmentEnabled == true and .isOttCaEnrollmentEnabled == true and (.identityRoles | sort) == ["e2e", "sensors"] and .identityNameFormat == "[caName]-[requestedName]" and .externalIdClaim == {"location": "SAN_URI", "matcher": "SCHEME", "matcherCriteria": "spiffe", "parser": "SPLIT", "parserCriteria": "/", "index": 2} and .tags == {"env": "e2e"}'
+	expect "certificate authority keeps its Ziti ID" "$(mr_id certificateauthorities device-ca)" "${ca}"
+	expect "certificate authority keeps its certificate" "$(ziti_get cas "${ca}" | jq -r '.fingerprint')" "${fingerprint}"
+	refusal="$(patch certificateauthorities device-ca '{"certPem": "another certificate"}' 2>&1)" &&
+		fail "the certificate of a certificate authority was changed"
+	case "${refusal}" in
+	*"certPem cannot be changed after creation"*) ok "the certificate of a certificate authority cannot be changed" ;;
+	*) fail "changing the certificate of a certificate authority: ${refusal}" ;;
+	esac
+	# The signer changes from a JWKS endpoint to a certificate, for which any
+	# certificate will do, and loses its client ID.
+	patch externaljwtsigners corporate-sso "$(jq -n --rawfile pem "${WORK}/device-ca.crt" \
+		'{audience: "ziti-edge", jwksEndpoint: null, certPem: $pem, kid: "e2e-key", clientId: null, scopes: ["openid"], targetToken: "ACCESS", enrollNameClaimsSelector: "preferred_username", enrollAttributeClaimsSelector: "groups", tags: {env: "e2e", team: null}}')"
+	eventually "external JWT signer is updated in Ziti" entity_matches external-jwt-signers "${signer}" \
+		'.audience == "ziti-edge" and .jwksEndpoint == null and .commonName == "provider-ziti e2e device CA" and .kid == "e2e-key" and .clientId == null and .scopes == ["openid"] and .targetToken == "ACCESS" and .enrollNameClaimsSelector == "preferred_username" and .enrollAttributeClaimsSelector == "groups" and .claimsProperty == "email" and .enabled == true and .tags == {"env": "e2e"}'
+	expect "external JWT signer has the certificate of the test" \
+		"$(ziti_get external-jwt-signers "${signer}" | jq -r '.certPem')" "$(cat "${WORK}/device-ca.crt")"
+	expect "external JWT signer keeps its Ziti ID" "$(mr_id externaljwtsigners corporate-sso)" "${signer}"
+
+	step "Changes made in Ziti behind the provider's back are reverted"
+	ziti_patch cas "${ca}" '{"isOttCaEnrollmentEnabled": false, "identityRoles": ["tampered"]}'
+	entity_matches cas "${ca}" '.identityRoles == ["tampered"]' >/dev/null || fail "could not tamper with the certificate authority"
+	# Which is why the provider replaces a certificate authority instead.
+	entity_matches cas "${ca}" '.externalIdClaim == null' >/dev/null ||
+		fail "a PATCH without the external ID claim of a certificate authority no longer takes the claim away"
+	ok "a PATCH of a certificate authority took its external ID claim away"
+	eventually "certificate authority is restored" entity_matches cas "${ca}" \
+		'.isOttCaEnrollmentEnabled == true and (.identityRoles | sort) == ["e2e", "sensors"] and .externalIdClaim.parserCriteria == "/" and .externalIdClaim.index == 2'
+	ziti_patch external-jwt-signers "${signer}" '{"audience": "tampered", "enabled": false}'
+	entity_matches external-jwt-signers "${signer}" '.audience == "tampered"' >/dev/null || fail "could not tamper with the external JWT signer"
+	eventually "external JWT signer is restored" entity_matches external-jwt-signers "${signer}" '.audience == "ziti-edge" and .enabled == true'
+	ziti_patch auth-policies "${policy}" '{"primary": {"extJwt": {"allowedSigners": []}}}'
+	entity_matches auth-policies "${policy}" '(.primary.extJwt.allowedSigners | length) == 0' >/dev/null || fail "could not tamper with the auth policy"
+	eventually "auth policy refers to its signer again" entity_matches auth-policies "${policy}" ".primary.extJwt.allowedSigners == [\"${signer}\"]"
+
+	step "A setting that is taken out of the spec is removed in Ziti"
+	patch certificateauthorities device-ca '{"externalIdClaim": null}'
+	eventually "external ID claim is removed in Ziti" entity_matches cas "${ca}" '.externalIdClaim == null'
+
+	step "The owner of the certificate authority verifies it"
+	# The proof is a certificate with the verification token as its common
+	# name, signed with the key of the certificate authority. Neither openssl
+	# nor curl may print the token.
+	openssl req -new -newkey rsa:2048 -nodes -subj "/CN=${token}" \
+		-keyout "${WORK}/verify.key" -out "${WORK}/verify.csr" 2>/dev/null || fail "cannot create the proof"
+	openssl x509 -req -in "${WORK}/verify.csr" -CA "${WORK}/device-ca.crt" -CAkey "${WORK}/device-ca.key" -CAcreateserial \
+		-days 1 -out "${WORK}/verify.crt" 2>/dev/null || fail "cannot sign the proof"
+	curl -sk --fail -X POST -H "zt-session: ${ZITI_TOKEN}" -H 'Content-Type: text/plain' \
+		--data-binary "@${WORK}/verify.crt" "${ZITI_API}/cas/${ca}/verify" >/dev/null || fail "Ziti does not accept the proof"
+	eventually "certificate authority reports that it is verified" status_is certificateauthorities device-ca isVerified true
+	patch certificateauthorities device-ca '{"isAuthEnabled": true}'
+	eventually "certificate authority stays verified when it is updated" entity_matches cas "${ca}" '.isAuthEnabled == true and .isVerified == true'
+
+	step "The identity enrolls with a certificate of the certificate authority"
+	openssl req -new -newkey rsa:2048 -nodes -subj '/CN=sensor' \
+		-keyout "${WORK}/sensor.key" -out "${WORK}/sensor.csr" 2>/dev/null || fail "cannot create a client certificate request"
+	printf 'extendedKeyUsage=clientAuth\n' >"${WORK}/sensor.ext"
+	openssl x509 -req -in "${WORK}/sensor.csr" -CA "${WORK}/device-ca.crt" -CAkey "${WORK}/device-ca.key" -CAcreateserial \
+		-days 1 -extfile "${WORK}/sensor.ext" -out "${WORK}/sensor.crt" 2>/dev/null || fail "cannot sign the client certificate"
+	check_token sensor-enrollment identities "${sensor}" '.enrollment.ottca.jwt'
+	published="$(kubectl get secret sensor-enrollment -o jsonpath='{.data.enrollmentToken}')"
+	enrollment="$(ziti_get identities "${sensor}" | jq -er '.enrollment.ottca.token')" || fail "the identity has no enrollment token"
+	curl -sk --fail -X POST --cert "${WORK}/sensor.crt" --key "${WORK}/sensor.key" -H 'Content-Type: application/json' \
+		-d "{\"token\": \"${enrollment}\"}" "${ZITI_URL}/edge/client/v1/enroll/ottca" >/dev/null ||
+		fail "the identity cannot enroll with its token and its client certificate"
+	entity_matches identities "${sensor}" \
+		"([.enrollment[]?] | length) == 0 and .authenticators.cert.fingerprint == \"$(openssl x509 -in "${WORK}/sensor.crt" -noout -fingerprint -sha1 | sed -e 's/.*=//' -e 's/://g' | tr 'A-F' 'a-f')\"" >/dev/null ||
+		fail "Ziti does not know the identity by its client certificate"
+	ok "identity is enrolled in Ziti with its client certificate"
+	eventually "identity reports that it is enrolled" status_is identitycas sensor enrolled true
+	expect "identity no longer reports a pending enrollment" \
+		"$(kubectl get "identitycas.${GROUP}" sensor -o jsonpath='{.status.atProvider.enrollmentExpiresAt}')" ""
+	# The connection secret keeps the token that was used, or loses it, but
+	# never gets another one. The token itself is never printed.
+	case "$(kubectl get secret sensor-enrollment -o jsonpath='{.data.enrollmentToken}')" in
+	"" | "${published}") ok "no enrollment token is published for an identity that has enrolled" ;;
+	*) fail "secret/sensor-enrollment got a new enrollment token after the identity enrolled" ;;
+	esac
+
+	step "Nothing is updated without a spec change"
+	authentication_stamps() {
+		stamps cas "${ca}"
+		stamps external-jwt-signers "${signer}"
+		stamps auth-policies "${policy}"
+		stamps identities "${sensor}"
+	}
+	expect_settled "authentication entities stay untouched" authentication_stamps
+
+	step "An external JWT signer outlives the auth policy that refers to it"
+	kubectl delete --wait=false "externaljwtsigners.${GROUP}/corporate-sso"
+	eventually "signer reports that Ziti refuses to delete it" sync_error_has externaljwtsigners corporate-sso 'CAN_NOT_DELETE_REFERENCED_ENTITY'
+	expect "signer is still in Ziti" "$(ziti_id external-jwt-signers corporate-sso)" "${signer}"
+	delete examples/authpolicy/jwt.yaml
+	expect_gone "auth policy is gone" auth-policies corporate-sso-only
+	eventually "signer is deleted once no auth policy refers to it" mr_gone externaljwtsigners corporate-sso
+	expect_gone "external JWT signer is gone" external-jwt-signers corporate-sso
+
+	step "An identity is deleted before its certificate authority"
+	delete examples/identity/ca.yaml
+	expect_gone "identity is gone" identities sensor
+	expect "certificate authority is still in Ziti" "$(ziti_id cas device-ca)" "${ca}"
+
+	step "A certificate authority is deleted before the identity that refers to it"
+	apply examples/identity/ca.yaml
+	wait_ready examples/identity/ca.yaml
+	sensor="$(mr_id identitycas sensor)"
+	check_entity identitycas sensor identities ".enrollment.ottca.caId == \"${ca}\""
+	kubectl delete --wait --timeout="${TIMEOUT}s" "certificateauthorities.${GROUP}/device-ca"
+	expect_gone "certificate authority is gone" cas device-ca
+	# Ziti deletes the pending enrollments of a certificate authority with it.
+	entity_matches identities "${sensor}" '.name == "sensor" and ([.enrollment[]?] | length) == 0' >/dev/null ||
+		fail "the identity is gone or kept an enrollment with a certificate authority that is gone"
+	ok "identity is still in Ziti, without its enrollment"
+	delete examples/identity/ca.yaml
+	expect_gone "identity is gone" identities sensor
+}
+
+test_renewal() {
+	step "Creating identities and edge routers to take the enrollment from"
+	local ca
+	openssl req -x509 -newkey rsa:2048 -nodes -days 1 -subj '/CN=provider-ziti e2e renewal CA' \
+		-keyout "${WORK}/renewal-ca.key" -out "${WORK}/renewal-ca.crt" 2>/dev/null || fail "cannot create a CA certificate"
+	ca="$(ziti_post cas "$(jq -n --rawfile pem "${WORK}/renewal-ca.crt" \
+		'{name: "e2e-renewal-ca", certPem: $pem, isAuthEnabled: true, isAutoCaEnrollmentEnabled: false, isOttCaEnrollmentEnabled: true, identityRoles: []}')")" ||
+		fail "cannot create a certificate authority in Ziti"
+
+	# declare_resource <kind> <name> [setting] creates a managed resource that
+	# writes its enrollment token to the secret <name>-enrollment.
+	declare_resource() {
+		kubectl apply -f - <<EOF
+apiVersion: ${GROUP}/v1alpha1
+kind: $1
+metadata:
+  name: $2
+  namespace: default
+spec:
+  providerConfigRef:
+    kind: ProviderConfig
+    name: default
+  writeConnectionSecretToRef:
+    name: $2-enrollment
+  forProvider:
+    name: $2
+    ${3:-}
+EOF
+	}
+	# Only a token that replaces another one is valid for the 10 minutes.
+	declare_resource Identity e2e-expired 'enrollmentDuration: 10m'
+	declare_resource Identity e2e-deleted
+	declare_resource Identity e2e-enrolled
+	declare_resource IdentityCA e2e-deleted-ca 'ottca: e2e-renewal-ca'
+	declare_resource IdentityUPDB e2e-deleted-updb 'updbUsername: e2e-deleted-updb'
+	declare_resource EdgeRouter e2e-deleted-router
+	declare_resource EdgeRouter e2e-enrolled-router
+	local resources=(
+		"identities.${GROUP}/e2e-expired" "identities.${GROUP}/e2e-deleted" "identities.${GROUP}/e2e-enrolled"
+		"identitycas.${GROUP}/e2e-deleted-ca" "identityupdbs.${GROUP}/e2e-deleted-updb"
+		"edgerouters.${GROUP}/e2e-deleted-router" "edgerouters.${GROUP}/e2e-enrolled-router"
+	)
+	kubectl wait --for=condition=Ready --timeout="${TIMEOUT}s" "${resources[@]}"
+
+	local expired deleted with_ca with_password router enrolled enrolled_router
+	expired="$(mr_id identities e2e-expired)"
+	deleted="$(mr_id identities e2e-deleted)"
+	with_ca="$(mr_id identitycas e2e-deleted-ca)"
+	with_password="$(mr_id identityupdbs e2e-deleted-updb)"
+	router="$(mr_id edgerouters e2e-deleted-router)"
+	enrolled="$(mr_id identities e2e-enrolled)"
+	enrolled_router="$(mr_id edgerouters e2e-enrolled-router)"
+	check_token e2e-expired-enrollment identities "${expired}" '.enrollment.ott.jwt'
+	check_token e2e-deleted-enrollment identities "${deleted}" '.enrollment.ott.jwt'
+	check_token e2e-deleted-ca-enrollment identities "${with_ca}" '.enrollment.ottca.jwt'
+	check_token e2e-deleted-updb-enrollment identities "${with_password}" '.enrollment.updb.jwt'
+	check_token e2e-deleted-router-enrollment edge-routers "${router}" '.enrollmentJwt'
+	check_token e2e-enrolled-enrollment identities "${enrolled}" '.enrollment.ott.jwt'
+	check_token e2e-enrolled-router-enrollment edge-routers "${enrolled_router}" '.enrollmentJwt'
+	eventually "edgerouters/e2e-deleted-router: status says when the token expires" \
+		expiry_is_current edgerouters e2e-deleted-router edge-routers '.enrollmentExpiresAt'
+
+	step "An enrollment token that expired is replaced"
+	local old enrollment
+	old="$(token_digest e2e-expired-enrollment)" || fail "cannot read secret/e2e-expired-enrollment"
+	enrollment="$(ziti_get identities "${expired}" | jq -er '.enrollment.ott.id')" || fail "e2e-expired has no enrollment"
+	# The first token is valid for hours. Ziti is asked for one that expires
+	# in a moment instead.
+	ziti_refresh "${enrollment}" 5 || fail "cannot refresh the enrollment of e2e-expired in Ziti"
+	expires_in identities "${expired}" '.enrollment.ott.expiresAt' -60 10 >/dev/null || fail "could not make the enrollment of e2e-expired expire"
+	eventually "identities/e2e-expired: the enrollment is valid again, for the 10 minutes the resource asks for" \
+		expires_in identities "${expired}" '.enrollment.ott.expiresAt' 300 600
+	expect "identities/e2e-expired: the enrollment is the one that expired" \
+		"$(ziti_get identities "${expired}" | jq -r '.enrollment.ott.id')" "${enrollment}"
+	expect_renewed identities e2e-expired identities '.enrollment.ott.jwt' '.enrollment.ott.expiresAt' "${old}"
+
+	step "An enrollment that is gone is created anew"
+	# recreated <plural> <name> <method> deletes the enrollment of an identity
+	# in Ziti and checks that the identity gets another one.
+	recreated() {
+		local plural="$1" name="$2" method="$3" id old enrollment
+		id="$(mr_id "${plural}" "${name}")"
+		old="$(token_digest "${name}-enrollment")" || fail "cannot read secret/${name}-enrollment"
+		enrollment="$(ziti_get identities "${id}" | jq -er ".enrollment.${method}.id")" || fail "${name} has no enrollment"
+		ziti_delete enrollments "${enrollment}" || fail "cannot delete the enrollment of ${name} in Ziti"
+		eventually "${plural}/${name}: has an enrollment again" entity_matches identities "${id}" \
+			".enrollment.${method}.id != null and .enrollment.${method}.id != \"${enrollment}\""
+		expect_renewed "${plural}" "${name}" identities ".enrollment.${method}.jwt" ".enrollment.${method}.expiresAt" "${old}"
+	}
+	recreated identities e2e-deleted ott
+	recreated identitycas e2e-deleted-ca ottca
+	recreated identityupdbs e2e-deleted-updb updb
+	expires_in identities "${deleted}" '.enrollment.ott.expiresAt' 10200 10800 >/dev/null ||
+		fail "the new enrollment of e2e-deleted is not valid for 180 minutes"
+	ok "identities/e2e-deleted: the new token is valid for 180 minutes"
+	entity_matches identities "${with_ca}" ".enrollment.ottca.caId == \"${ca}\" and (.enrollment | has(\"ott\") | not)" >/dev/null ||
+		fail "the new enrollment of e2e-deleted-ca is not one for its certificate authority"
+	ok "identitycas/e2e-deleted-ca: the new enrollment is one for its certificate authority"
+	entity_matches identities "${with_password}" '(.enrollment | has("updb")) and (.enrollment | has("ott") | not)' >/dev/null ||
+		fail "the new enrollment of e2e-deleted-updb is not one for a password"
+	ok "identityupdbs/e2e-deleted-updb: the new enrollment is one for a password"
+
+	step "An edge router whose enrollment is gone is enrolled anew"
+	local old_expiry
+	old="$(token_digest e2e-deleted-router-enrollment)" || fail "cannot read secret/e2e-deleted-router-enrollment"
+	old_expiry="$(ziti_get edge-routers "${router}" | jq -er '.enrollmentExpiresAt')" || fail "e2e-deleted-router has no enrollment"
+	enrollment="$(curl -sk --fail -H "zt-session: ${ZITI_TOKEN}" --get --data-urlencode "filter=edgeRouter=\"${router}\"" \
+		"${ZITI_API}/enrollments" | jq -er '.data[0].id')" || fail "cannot find the enrollment of e2e-deleted-router"
+	ziti_delete enrollments "${enrollment}" || fail "cannot delete the enrollment of e2e-deleted-router in Ziti"
+	eventually "edgerouters/e2e-deleted-router: has an enrollment again" entity_matches edge-routers "${router}" \
+		".isVerified == false and .enrollmentJwt != null and .enrollmentExpiresAt != \"${old_expiry}\""
+	expect_renewed edgerouters e2e-deleted-router edge-routers '.enrollmentJwt' '.enrollmentExpiresAt' "${old}"
+
+	step "A new token can be used, and what has enrolled is left alone"
+	local token
+	# Ziti only shows the username of a password enrollment once it is used.
+	token="$(ziti_get identities "${with_password}" | jq -er '.enrollment.updb.token')" || fail "e2e-deleted-updb has no enrollment"
+	curl -sk --fail -X POST -H 'Content-Type: application/json' -H 'Accept: application/json' \
+		-d "$(jq -n --arg password "$(openssl rand -hex 16)" '{password: $password}')" \
+		"${ZITI_URL}/edge/client/v1/enroll?method=updb&token=${token}" >/dev/null ||
+		fail "cannot enroll e2e-deleted-updb with its new token"
+	entity_matches identities "${with_password}" '.authenticators.updb.username == "e2e-deleted-updb" and ([.enrollment[]?] | length) == 0' >/dev/null ||
+		fail "e2e-deleted-updb has not enrolled with the username of its resource"
+	ok "identityupdbs/e2e-deleted-updb: enrolled with its new token and the username of its resource"
+
+	# The identity enrolls like a Ziti SDK does: with a certificate request
+	# and the token its enrollment JWT stands for.
+	openssl req -new -newkey rsa:2048 -nodes -subj '/CN=e2e-enrolled' \
+		-keyout "${WORK}/enrolled.key" -out "${WORK}/enrolled.csr" 2>/dev/null || fail "cannot create a certificate request"
+	token="$(ziti_get identities "${enrolled}" | jq -er '.enrollment.ott.token')" || fail "e2e-enrolled has no enrollment"
+	curl -sk --fail -X POST -H 'Content-Type: application/x-pem-file' -H 'Accept: application/json' \
+		--data-binary "@${WORK}/enrolled.csr" "${ZITI_URL}/edge/client/v1/enroll?method=ott&token=${token}" >/dev/null ||
+		fail "cannot enroll e2e-enrolled"
+	# An edge router asks for two certificates. The one it connects to the
+	# controller with must name its ID.
+	openssl req -new -newkey rsa:2048 -nodes -subj "/CN=${enrolled_router}" \
+		-keyout "${WORK}/enrolled-router.key" -out "${WORK}/enrolled-router.csr" 2>/dev/null || fail "cannot create a certificate request"
+	openssl req -new -key "${WORK}/enrolled-router.key" -subj '/CN=e2e-enrolled-router' \
+		-out "${WORK}/enrolled-router-server.csr" 2>/dev/null || fail "cannot create a certificate request"
+	token="$(ziti_get edge-routers "${enrolled_router}" | jq -er '.enrollmentToken')" || fail "e2e-enrolled-router has no enrollment"
+	curl -sk --fail -X POST -H 'Content-Type: application/json' -H 'Accept: application/json' \
+		-d "$(jq -n --rawfile client "${WORK}/enrolled-router.csr" --rawfile server "${WORK}/enrolled-router-server.csr" \
+			'{certCsr: $client, serverCertCsr: $server}')" \
+		"${ZITI_URL}/edge/client/v1/enroll?method=erott&token=${token}" >/dev/null ||
+		fail "cannot enroll e2e-enrolled-router"
+
+	# has_enrolled succeeds if both have enrolled and have no enrollment.
+	has_enrolled() {
+		entity_matches identities "${enrolled}" '.authenticators.cert.id != null and ([.enrollment[]?] | length) == 0' &&
+			entity_matches edge-routers "${enrolled_router}" '.isVerified == true and .fingerprint != "" and .enrollmentJwt == null'
+	}
+	has_enrolled >/dev/null || fail "e2e-enrolled or e2e-enrolled-router has not enrolled"
+	ok "identities/e2e-enrolled and edgerouters/e2e-enrolled-router: enrolled with their tokens"
+	reports_enrolled() {
+		[ "$(kubectl get "identities.${GROUP}" e2e-enrolled -o jsonpath='{.status.atProvider.enrolled}')" = "true" ] &&
+			[ "$(kubectl get "edgerouters.${GROUP}" e2e-enrolled-router -o jsonpath='{.status.atProvider.isVerified}')" = "true" ]
+	}
+	eventually "identities/e2e-enrolled and edgerouters/e2e-enrolled-router: report that they have enrolled" reports_enrolled
+
+	# The certificates of the enrolled entities, every enrollment without
+	# its token, and the last update of every entity.
+	enrollment_stamps() {
+		ziti_get identities "${enrolled}" | jq -r '"\(.id) \(.updatedAt) \(.authenticators.cert.fingerprint) \([.enrollment[] | .id, .expiresAt])"'
+		ziti_get edge-routers "${enrolled_router}" | jq -r '"\(.id) \(.updatedAt) \(.isVerified) \(.fingerprint) \(.enrollmentExpiresAt)"'
+		local id
+		for id in "${expired}" "${deleted}" "${with_ca}" "${with_password}"; do
+			ziti_get identities "${id}" | jq -r '"\(.id) \(.updatedAt) \([.enrollment[] | .id, .expiresAt])"'
+		done
+		ziti_get edge-routers "${router}" | jq -r '"\(.id) \(.updatedAt) \(.isVerified) \(.enrollmentExpiresAt)"'
+	}
+	expect_settled "enrolled entities are left alone and no token is replaced twice" enrollment_stamps
+	has_enrolled >/dev/null || fail "e2e-enrolled or e2e-enrolled-router was given an enrollment after it had enrolled"
+	ok "identities/e2e-enrolled and edgerouters/e2e-enrolled-router: have no enrollment and keep their certificates"
+	local resource
+	for resource in "${resources[@]}"; do
+		expect "${resource}: is in sync" "$(kubectl get "${resource}" -o jsonpath='{.status.conditions[?(@.type=="Synced")].status}')" "True"
+	done
+
+	step "Deleting the identities and edge routers"
+	kubectl delete --wait --timeout="${TIMEOUT}s" "${resources[@]}"
+	local name
+	for name in e2e-expired e2e-deleted e2e-enrolled e2e-deleted-ca e2e-deleted-updb; do
+		expect_gone "identity ${name} is gone" identities "${name}"
+	done
+	expect_gone "edge router e2e-deleted-router is gone" edge-routers e2e-deleted-router
+	expect_gone "edge router e2e-enrolled-router is gone" edge-routers e2e-enrolled-router
 	ziti_delete cas "${ca}" || fail "cannot delete the certificate authority"
 }
 
@@ -716,6 +1162,8 @@ run_tests() {
 	if [ "${E2E_SKIP_EXTENDED:-false}" != "true" ]; then
 		test_extended
 		test_posture_checks
+		test_authentication
+		test_renewal
 	fi
 	step "All end-to-end checks passed"
 }

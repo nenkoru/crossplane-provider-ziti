@@ -22,12 +22,14 @@ import (
 
 	"github.com/crossplane/provider-ziti/internal/connector"
 	"github.com/crossplane/provider-ziti/internal/controller/authpolicy"
+	"github.com/crossplane/provider-ziti/internal/controller/certificateauthority"
 	"github.com/crossplane/provider-ziti/internal/controller/config"
 	"github.com/crossplane/provider-ziti/internal/controller/confighostv1"
 	"github.com/crossplane/provider-ziti/internal/controller/confighostv2"
 	"github.com/crossplane/provider-ziti/internal/controller/configinterceptv1"
 	"github.com/crossplane/provider-ziti/internal/controller/edgerouter"
 	"github.com/crossplane/provider-ziti/internal/controller/edgerouterpolicy"
+	"github.com/crossplane/provider-ziti/internal/controller/externaljwtsigner"
 	"github.com/crossplane/provider-ziti/internal/controller/generic"
 	"github.com/crossplane/provider-ziti/internal/controller/identity"
 	"github.com/crossplane/provider-ziti/internal/controller/identityca"
@@ -74,6 +76,8 @@ func SetupGated(mgr ctrl.Manager, o controller.Options) error {
 		func() error { return generic.SetupGated(mgr, o, clients, posturecheckmac.Kind) },
 		func() error { return generic.SetupGated(mgr, o, clients, posturecheckprocess.Kind) },
 		func() error { return generic.SetupGated(mgr, o, clients, posturecheckmultiprocess.Kind) },
+		func() error { return generic.SetupGated(mgr, o, clients, certificateauthority.Kind) },
+		func() error { return generic.SetupGated(mgr, o, clients, externaljwtsigner.Kind) },
 	} {
 		if err := setup(); err != nil {
 			return err

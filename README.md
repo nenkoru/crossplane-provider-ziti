@@ -36,8 +36,8 @@ namespaced, and a cluster-scoped `ClusterProviderConfig` is available.
 | `PostureCheckMac` | posture check of type MAC | yes | yes | yes | yes | posture checks |
 | `PostureCheckProcess` | posture check of type PROCESS | yes | yes | yes | yes | posture checks |
 | `PostureCheckMultiProcess` | posture check of type PROCESS_MULTI | yes | yes | yes | yes | posture checks |
-| `CertificateAuthority` | certificate authority | no | no | no | no | no |
-| `ExternalJWTSigner` | external JWT signer | no | no | no | no | no |
+| `CertificateAuthority` | third-party certificate authority | yes | yes | yes | yes | authentication |
+| `ExternalJWTSigner` | external JWT signer | yes | yes | yes | yes | authentication |
 
 How to read the table:
 
@@ -79,6 +79,24 @@ How to read the table:
   roles take `#attribute`, `#all` or `@name`, where the name is resolved to an
   ID. A resource that refers to something that does not exist yet reports the
   error in its `Synced` condition and is retried.
+- **Certificate authorities.** A `CertificateAuthority` is ready when it
+  exists in Ziti as declared, verified or not. The provider cannot verify it:
+  that takes a certificate signed with the private key of the certificate
+  authority. Its status has what the owner of that key needs:
+  `verificationToken` is the common name the certificate must have, to be
+  posted to `/edge/management/v1/cas/<id>/verify`, and `isVerified` tells
+  whether it is done. Until then Ziti does not accept certificates of the
+  certificate authority for authentication. `fingerprint` tells which
+  certificate Ziti holds. Deleting a certificate authority deletes the pending
+  enrollments with its certificates: an `IdentityCA` that refers to it stays,
+  but can no longer enroll.
+- **External JWT signers.** An `AuthPolicy` takes names or IDs of signers in
+  `primary.extJwt.allowedSigners` and `secondary.requireExtJwtSigner`, and an
+  `ExternalJWTSigner` the name or ID of an auth policy in
+  `enrollAuthPolicyId`. Ziti does not delete a signer that an auth policy
+  refers to: the `ExternalJWTSigner` reports the conflict and is deleted once
+  the policy is gone. Ziti ignores the tags of a signer that is being created;
+  they follow with an update right after.
 - **Identities.** The four identity kinds take the same settings and differ
   in how the identity enrolls: `Identity` with a one-time token, `IdentityCA`
   with a one-time token and a certificate of a third-party CA,
@@ -95,20 +113,47 @@ How to read the table:
   API server rejects an entry that is listed twice.
 - **Enrollment tokens.** `Identity`, `IdentityCA`, `IdentityUPDB` and
   `EdgeRouter` write their enrollment JWT to the Secret named in
-  `spec.writeConnectionSecretToRef`, under the key `enrollmentToken`. Ziti
+  `spec.writeConnectionSecretToRef`, under the key `enrollmentToken`, and
+  show when it expires in `status.atProvider.enrollmentExpiresAt`. Ziti
   stops reporting the token once it is used; the Secret keeps the last one.
-  An expired token is not renewed yet.
+- **Renewal of enrollment tokens.** A token that can no longer be used is
+  replaced, in Ziti and in the Secret, as long as the identity or edge router
+  has not enrolled: when its enrollment has expired, and when it has none
+  because the enrollment was deleted in Ziti. An enrollment that has expired
+  is refreshed, a missing one is created with the method of the kind, and an
+  edge router is enrolled anew.
+  - It never happens to an identity that has an authenticator, nor to an
+    edge router that is verified or has a certificate: these have enrolled,
+    and enrolling an edge router anew would take its certificate away and
+    disconnect it. Without that information from Ziti nothing is renewed
+    either. An identity whose authenticators were all deleted in Ziti counts
+    as not enrolled, so it gets a token again.
+  - A token is replaced only once it has expired on the clock of the
+    controller, five seconds ago or more, never while it can still be used.
+  - The new token of an identity is valid for
+    `spec.forProvider.enrollmentDuration`, which is `180m` unless set, the
+    default of Ziti; the minimum is `5m`. The first token and every token of
+    an edge router are valid for as long as the controller is configured to
+    make them.
+  - A renewal is an update: it follows `spec.managementPolicies`, and one
+    that fails is reported in the `Synced` condition and retried.
 - **Deletion.** Deleting a managed resource deletes the Ziti entity. Set
   `spec.managementPolicies` to keep it. The hosting settings an identity has
   per service are dropped first: Ziti keeps them when a service is deleted
   and then refuses to delete the identity.
-- **Immutable settings.** The `type` of an identity, `IdentityCA.ottca` and
-  `IdentityUPDB.updbUsername` cannot be changed after creation; the API
-  server rejects the change.
+- **Immutable settings.** The `type` of an identity, `IdentityCA.ottca`,
+  `IdentityUPDB.updbUsername` and `CertificateAuthority.certPem` cannot be
+  changed after creation; the API server rejects the change.
 - **Updates.** Entities are updated with `PATCH`, so settings the provider
   does not manage are left alone. `Service` and `AuthPolicy` are replaced
   with `PUT` instead: a `PATCH` of a service ignores `encryptionRequired`, and
   a `PATCH` of an auth policy ignores some password settings.
+  `CertificateAuthority` and `ExternalJWTSigner` are replaced as well: a
+  `PATCH` of a certificate authority drops its external ID claim, and a
+  `PATCH` cannot remove a setting, which a signer that changes from
+  `jwksEndpoint` to `certPem` needs. A setting of these two kinds that is
+  left unset in the spec is therefore not left alone: it is removed in Ziti
+  or reset to the default of Ziti.
 
 ## Running the provider
 
@@ -267,7 +312,10 @@ The end-to-end test starts an OpenZiti controller from
 out-of-cluster, applies the examples and checks the result through the Ziti
 API: the entities exist as declared, follow spec changes, are restored after
 being changed in Ziti directly, are not updated without a spec change, and
-are deleted with their managed resources. It starts OpenZiti 2.0.6; set
+are deleted with their managed resources. It also lets an enrollment expire,
+deletes others and enrolls an identity and an edge router, and checks that
+the tokens are replaced and that what has enrolled is left alone. It starts
+OpenZiti 2.0.6; set
 `ZITI_VERSION` for another release. In CI the `unit-tests` job runs it after
 the unit tests, until the workflow gets a job of its own for it.
 
@@ -282,9 +330,7 @@ entities.
 
 1. Give the end-to-end suite its own CI job; the `unit-tests` job runs it for
    now.
-2. Add the missing kinds: `CertificateAuthority` and `ExternalJWTSigner`.
-3. Renew expired enrollment tokens.
-4. Package and install the provider through Crossplane in the end-to-end test,
+2. Package and install the provider through Crossplane in the end-to-end test,
    then publish a first release.
 
 ## License

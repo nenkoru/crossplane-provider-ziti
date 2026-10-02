@@ -83,7 +83,8 @@ type ExtJWTAuth struct {
 	// Allowed enables external JWT authentication.
 	// +optional
 	Allowed bool `json:"allowed,omitempty"`
-	// AllowedSigners is the list of IDs of the allowed external JWT signers.
+	// AllowedSigners is the list of names or IDs of the external JWT signers
+	// whose tokens are accepted. Every signer is accepted if it is empty.
 	// +optional
 	AllowedSigners []string `json:"allowedSigners,omitempty"`
 }
@@ -93,8 +94,8 @@ type SecondaryAuth struct {
 	// RequireTOTP requires a time-based one-time password.
 	// +optional
 	RequireTOTP bool `json:"requireTotp,omitempty"`
-	// RequireExtJWTSigner is the ID of an external JWT signer whose token is
-	// required in addition to the primary method.
+	// RequireExtJWTSigner is the name or ID of an external JWT signer whose
+	// token is required in addition to the primary method.
 	// +optional
 	RequireExtJWTSigner *string `json:"requireExtJwtSigner,omitempty"`
 }

@@ -37,6 +37,14 @@ type IdentityParameters struct {
 	// ExternalID identifies the identity to an external JWT signer.
 	// +optional
 	ExternalID *string `json:"externalId,omitempty"`
+	// EnrollmentDuration is how long an enrollment token is valid that
+	// replaces one that expired or is gone, 180m when this is not set. It
+	// does not apply to the first token, which is valid for as long as the
+	// Ziti controller is configured to make it, and an identity without an
+	// enrollment has no use for it.
+	// +optional
+	// +kubebuilder:validation:XValidation:rule="duration(self) >= duration('5m')",message="enrollmentDuration must be at least 5m"
+	EnrollmentDuration *metav1.Duration `json:"enrollmentDuration,omitempty"`
 	// DefaultHostingCost is the cost of the terminators the identity hosts.
 	// +optional
 	// +kubebuilder:validation:Minimum=0

@@ -41,9 +41,31 @@ const (
 	Password = "admin"
 
 	prefix = "/edge/management/v1"
+
+	// routerEnrollmentDuration is how long the enrollment token of an edge
+	// router that is enrolled anew is valid.
+	routerEnrollmentDuration = 180 * time.Minute
 )
 
 var nameFilter = regexp.MustCompile(`^name="((?:[^"\\]|\\.)*)"$`)
+
+// defaults are the values the real controller stores in place of an empty
+// one.
+var defaults = map[string]map[string]any{
+	"cas": {"identityNameFormat": "[caName]-[commonName]"},
+	"external-jwt-signers": {
+		"claimsProperty":           "/sub",
+		"targetToken":              "ACCESS",
+		"enrollNameClaimsSelector": "/sub",
+		"enrollAuthPolicyId":       "default",
+	},
+}
+
+// unchangeable are the fields the real controller keeps when an entity is
+// replaced: they cannot be changed, or only the controller sets them.
+var unchangeable = map[string][]string{
+	"cas": {"certPem", "fingerprint", "isVerified", "verificationToken"},
+}
 
 // Server is a fake Ziti controller. Entities are stored as the JSON documents
 // that were posted to it, plus an id and the time they were created.
@@ -58,6 +80,7 @@ type Server struct {
 	requests    []string
 	ahead       time.Duration
 	loseCreate  bool
+	failRenewal bool
 }
 
 // NewServer starts a fake Ziti controller serving TLS.
@@ -138,6 +161,14 @@ func (s *Server) LoseNextCreateResponse() {
 	s.loseCreate = true
 }
 
+// FailNextRenewal makes the fake controller answer the next request for a
+// new enrollment token with an error, without carrying it out.
+func (s *Server) FailNextRenewal() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.failRenewal = true
+}
+
 // now returns the time on the clock of the fake controller.
 func (s *Server) now() time.Time {
 	return time.Now().Add(s.ahead)
@@ -188,6 +219,10 @@ func (s *Server) handle(w http.ResponseWriter, r *http.Request) {
 	s.requests = append(s.requests, r.Method+" "+path)
 
 	collection, id, _ := strings.Cut(strings.TrimPrefix(path, "/"), "/")
+	if entity, action, ok := strings.Cut(id, "/"); r.Method == http.MethodPost && (ok || collection == "enrollments") {
+		s.renew(w, r, collection, entity, action)
+		return
+	}
 	s.route(w, r, collection, id)
 }
 
@@ -276,9 +311,20 @@ func (s *Server) create(w http.ResponseWriter, r *http.Request, collection strin
 			}
 		}
 	}
-	if collection == "edge-routers" {
+	switch collection {
+	case "edge-routers":
 		entity["enrollmentJwt"] = "jwt-for-" + fmt.Sprint(entity["name"])
+	case "cas":
+		// A certificate authority starts out unverified, with the token its
+		// owner verifies it with.
+		entity["fingerprint"] = "fingerprint-of-" + fmt.Sprint(entity["name"])
+		entity["isVerified"] = false
+		entity["verificationToken"] = "token-for-" + fmt.Sprint(entity["name"])
+	case "external-jwt-signers":
+		// Like the real controller, the tags of a new signer are ignored.
+		delete(entity, "tags")
 	}
+	setDefaults(collection, entity)
 
 	s.put(collection, entity)
 	if s.loseCreate {
@@ -287,6 +333,129 @@ func (s *Server) create(w http.ResponseWriter, r *http.Request, collection strin
 		return
 	}
 	writeData(w, http.StatusCreated, map[string]any{"id": entity["id"]})
+}
+
+// renew handles a request for a new enrollment token: the creation or the
+// refresh of the enrollment of an identity, or enrolling an edge router anew.
+func (s *Server) renew(w http.ResponseWriter, r *http.Request, collection, id, action string) {
+	if s.failRenewal {
+		s.failRenewal = false
+		writeError(w, http.StatusServiceUnavailable, "UNAVAILABLE", nil)
+		return
+	}
+
+	switch {
+	case collection == "enrollments" && id == "":
+		s.createEnrollment(w, r)
+	case collection == "enrollments" && action == "refresh":
+		s.refreshEnrollment(w, r, id)
+	case collection == "edge-routers" && action == "re-enroll":
+		s.reEnroll(w, id)
+	default:
+		writeError(w, http.StatusNotFound, "NOT_FOUND", nil)
+	}
+}
+
+// token returns an enrollment token that differs from every token issued
+// before.
+func (s *Server) token(entity map[string]any) string {
+	s.nextID++
+	return fmt.Sprintf("jwt-%d-for-%v", s.nextID, entity["name"])
+}
+
+// expiry returns the time a request wants an enrollment token to expire at,
+// in the format of the API. Like the real controller, the fake one refuses a
+// time that does not lie ahead on its clock.
+func (s *Server) expiry(w http.ResponseWriter, settings map[string]any) (string, bool) {
+	expiresAt, err := time.Parse(time.RFC3339, fmt.Sprint(settings["expiresAt"]))
+	if err != nil || !expiresAt.After(s.now()) {
+		writeError(w, http.StatusBadRequest, "COULD_NOT_VALIDATE", map[string]any{"field": "expiresAt", "reason": "must be in the future"})
+		return "", false
+	}
+	return expiresAt.UTC().Format(time.RFC3339Nano), true
+}
+
+// createEnrollment gives an identity an enrollment of a method it has none
+// of. The enrollment keeps the settings it was created with.
+func (s *Server) createEnrollment(w http.ResponseWriter, r *http.Request) {
+	enrollment := map[string]any{}
+	if err := json.NewDecoder(r.Body).Decode(&enrollment); err != nil {
+		writeError(w, http.StatusBadRequest, "COULD_NOT_PARSE_BODY", nil)
+		return
+	}
+	identity, ok := s.collections["identities"][fmt.Sprint(enrollment["identityId"])]
+	if !ok {
+		writeError(w, http.StatusBadRequest, "COULD_NOT_VALIDATE", map[string]any{"field": "identityId", "reason": "identity not found"})
+		return
+	}
+	expiresAt, ok := s.expiry(w, enrollment)
+	if !ok {
+		return
+	}
+
+	enrollments, _ := identity["enrollment"].(map[string]any)
+	if enrollments == nil {
+		enrollments = map[string]any{}
+		identity["enrollment"] = enrollments
+	}
+	method := fmt.Sprint(enrollment["method"])
+	if _, ok := enrollments[method]; ok {
+		writeError(w, http.StatusConflict, "ENROLLMENT_EXISTS", nil)
+		return
+	}
+
+	s.nextID++
+	enrollment["id"] = fmt.Sprintf("id-%d", s.nextID)
+	enrollment["jwt"] = s.token(identity)
+	enrollment["expiresAt"] = expiresAt
+	delete(enrollment, "identityId")
+	delete(enrollment, "method")
+	enrollments[method] = enrollment
+	writeData(w, http.StatusCreated, map[string]any{"id": enrollment["id"]})
+}
+
+// refreshEnrollment gives the enrollment of an identity a new token.
+func (s *Server) refreshEnrollment(w http.ResponseWriter, r *http.Request, id string) {
+	settings := map[string]any{}
+	if err := json.NewDecoder(r.Body).Decode(&settings); err != nil {
+		writeError(w, http.StatusBadRequest, "COULD_NOT_PARSE_BODY", nil)
+		return
+	}
+
+	for _, identity := range s.collections["identities"] {
+		enrollments, _ := identity["enrollment"].(map[string]any)
+		for _, e := range enrollments {
+			enrollment, _ := e.(map[string]any)
+			if enrollment["id"] != id {
+				continue
+			}
+			expiresAt, ok := s.expiry(w, settings)
+			if !ok {
+				return
+			}
+			enrollment["jwt"] = s.token(identity)
+			enrollment["expiresAt"] = expiresAt
+			writeData(w, http.StatusOK, map[string]any{})
+			return
+		}
+	}
+	writeError(w, http.StatusNotFound, "NOT_FOUND", nil)
+}
+
+// reEnroll gives an edge router a new enrollment token. Like the real
+// controller, it does so for a router that has enrolled as well, which
+// thereby loses its certificate.
+func (s *Server) reEnroll(w http.ResponseWriter, id string) {
+	router, ok := s.collections["edge-routers"][id]
+	if !ok {
+		writeError(w, http.StatusNotFound, "NOT_FOUND", nil)
+		return
+	}
+	router["enrollmentJwt"] = s.token(router)
+	router["enrollmentExpiresAt"] = s.now().Add(routerEnrollmentDuration).UTC().Format(time.RFC3339Nano)
+	router["isVerified"] = false
+	delete(router, "fingerprint")
+	writeData(w, http.StatusOK, map[string]any{})
 }
 
 func (s *Server) get(w http.ResponseWriter, collection, id string) {
@@ -317,6 +486,9 @@ func (s *Server) patch(w http.ResponseWriter, r *http.Request, collection, id st
 		delete(fields, "encryptionRequired")
 	case "auth-policies":
 		delete(fields, "primary")
+	case "cas", "external-jwt-signers":
+		// Nor does a PATCH remove a setting: it ignores fields that are null.
+		maps.DeleteFunc(fields, func(_ string, v any) bool { return v == nil })
 	}
 	maps.Copy(entity, fields)
 	writeData(w, http.StatusOK, map[string]any{})
@@ -338,6 +510,12 @@ func (s *Server) replace(w http.ResponseWriter, r *http.Request, collection, id 
 	if created, ok := old["createdAt"]; ok {
 		entity["createdAt"] = created
 	}
+	for _, field := range unchangeable[collection] {
+		if v, ok := old[field]; ok {
+			entity[field] = v
+		}
+	}
+	setDefaults(collection, entity)
 	s.put(collection, entity)
 	writeData(w, http.StatusOK, map[string]any{})
 }
@@ -370,6 +548,16 @@ func (s *Server) missingService(identity map[string]any) string {
 		}
 	}
 	return ""
+}
+
+// setDefaults fills in the defaults of the controller for the fields of an
+// entity that are empty.
+func setDefaults(collection string, entity map[string]any) {
+	for field, value := range defaults[collection] {
+		if v := entity[field]; v == nil || v == "" {
+			entity[field] = value
+		}
+	}
 }
 
 func writeData(w http.ResponseWriter, status int, data any) {

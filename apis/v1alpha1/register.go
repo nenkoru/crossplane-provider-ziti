@@ -185,6 +185,20 @@ var (
 	PostureCheckMultiProcessGroupVersionKind = SchemeGroupVersion.WithKind(PostureCheckMultiProcessKind)
 )
 
+// CertificateAuthority type metadata.
+var (
+	CertificateAuthorityKind             = reflect.TypeOf(CertificateAuthority{}).Name()
+	CertificateAuthorityGroupKind        = schema.GroupKind{Group: Group, Kind: CertificateAuthorityKind}.String()
+	CertificateAuthorityGroupVersionKind = SchemeGroupVersion.WithKind(CertificateAuthorityKind)
+)
+
+// ExternalJWTSigner type metadata.
+var (
+	ExternalJWTSignerKind             = reflect.TypeOf(ExternalJWTSigner{}).Name()
+	ExternalJWTSignerGroupKind        = schema.GroupKind{Group: Group, Kind: ExternalJWTSignerKind}.String()
+	ExternalJWTSignerGroupVersionKind = SchemeGroupVersion.WithKind(ExternalJWTSignerKind)
+)
+
 func init() {
 	SchemeBuilder.Register(&ProviderConfig{}, &ProviderConfigList{})
 	SchemeBuilder.Register(&ProviderConfigUsage{}, &ProviderConfigUsageList{})
@@ -209,4 +223,6 @@ func init() {
 	SchemeBuilder.Register(&PostureCheckMac{}, &PostureCheckMacList{})
 	SchemeBuilder.Register(&PostureCheckProcess{}, &PostureCheckProcessList{})
 	SchemeBuilder.Register(&PostureCheckMultiProcess{}, &PostureCheckMultiProcessList{})
+	SchemeBuilder.Register(&CertificateAuthority{}, &CertificateAuthorityList{})
+	SchemeBuilder.Register(&ExternalJWTSigner{}, &ExternalJWTSignerList{})
 }
