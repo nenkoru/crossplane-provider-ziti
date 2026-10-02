@@ -84,14 +84,15 @@ How to read the table:
   with a one-time token and a certificate of a third-party CA,
   `IdentityUPDB` by choosing a password, `IdentityNone` not at all.
 - **Posture checks.** Ziti does not store the values of a posture check as
-  they are sent: domains, MAC addresses, hashes and fingerprints are kept as
-  sets, and MAC addresses, hashes and fingerprints in lower case without
-  separators. The spec may give them in any order, in either case and with
-  `:`, `-`, `.` or spaces between the digits; the provider sends and
-  compares them in the form Ziti stores, which is also what
-  `status.atProvider` shows. Ziti tells the processes of a
-  `PostureCheckMultiProcess` apart by operating system and path, so the API
-  server rejects a pair that is listed twice.
+  they are sent: domains, MAC addresses, hashes, fingerprints and the
+  versions of an operating system are kept as sets, and MAC addresses,
+  hashes and fingerprints in lower case without separators. The spec may
+  give them in any order, in either case and with `:`, `-`, `.` or spaces
+  between the digits; the provider sends and compares them in the form Ziti
+  stores, which is also what `status.atProvider` shows. Ziti keeps one
+  entry per operating system type of a `PostureCheckOS` and per operating
+  system and path of a `PostureCheckMultiProcess`, in their order, so the
+  API server rejects an entry that is listed twice.
 - **Enrollment tokens.** `Identity`, `IdentityCA`, `IdentityUPDB` and
   `EdgeRouter` write their enrollment JWT to the Secret named in
   `spec.writeConnectionSecretToRef`, under the key `enrollmentToken`. Ziti

@@ -16,7 +16,8 @@ type OperatingSystem struct {
 	// Type of operating system.
 	// +kubebuilder:validation:Enum=Windows;WindowsServer;Android;iOS;Linux;macOS
 	Type string `json:"type"`
-	// Versions constraint (e.g., [">=10.0.0"]).
+	// Versions constraint (e.g., [">=10.0.0"]). Ziti keeps them as a set, so
+	// their order and duplicates do not matter.
 	// +optional
 	Versions []string `json:"versions,omitempty"`
 }
@@ -25,8 +26,11 @@ type OperatingSystem struct {
 type PostureCheckOSParameters struct {
 	// Name of the posture check.
 	Name string `json:"name"`
-	// OperatingSystems that pass the check.
+	// OperatingSystems that pass the check. Ziti keeps one entry per type, so
+	// each type may be listed once, and their order does not matter.
 	// +kubebuilder:validation:MinItems=1
+	// +listType=map
+	// +listMapKey=type
 	OperatingSystems []OperatingSystem `json:"operatingSystems"`
 	// RoleAttributes for the posture check.
 	// +optional

@@ -21,6 +21,7 @@ import (
 	"os"
 	"testing"
 
+	"github.com/crossplane/crossplane-runtime/v2/pkg/meta"
 	kerrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime"
 	kube "sigs.k8s.io/controller-runtime/pkg/client"
@@ -30,9 +31,12 @@ import (
 
 	"github.com/crossplane/provider-ziti/apis"
 	"github.com/crossplane/provider-ziti/apis/v1alpha1"
+	"github.com/crossplane/provider-ziti/internal/client/fake"
+	"github.com/crossplane/provider-ziti/internal/controller/generic"
 	"github.com/crossplane/provider-ziti/internal/controller/posturecheckdomain"
 	"github.com/crossplane/provider-ziti/internal/controller/posturecheckmac"
 	"github.com/crossplane/provider-ziti/internal/controller/posturecheckmultiprocess"
+	"github.com/crossplane/provider-ziti/internal/controller/posturecheckos"
 	"github.com/crossplane/provider-ziti/internal/controller/posturecheckprocess"
 )
 
@@ -196,6 +200,82 @@ func TestPostureCheckMultiProcess(t *testing.T) {
 	}.run(t)
 }
 
+func TestPostureCheckOSOutOfOrder(t *testing.T) {
+	spec := func() *v1alpha1.PostureCheckOS {
+		return &v1alpha1.PostureCheckOS{
+			ObjectMeta: meta1("supported"),
+			Spec: v1alpha1.PostureCheckOSSpec{ForProvider: v1alpha1.PostureCheckOSParameters{
+				Name: "supported",
+				OperatingSystems: []v1alpha1.OperatingSystem{
+					{Type: "macOS", Versions: []string{">=14.0.0", ">=13.0.0"}},
+					{Type: "Windows"},
+					{Type: "Linux", Versions: []string{">=6.0.0", ">=5.0.0", ">=6.0.0"}},
+				},
+			}},
+		}
+	}
+
+	// Ziti returns the operating systems in the order of their type.
+	lifecycle[*v1alpha1.PostureCheckOS]{
+		kind: posturecheckos.Kind,
+		mg:   spec(),
+		created: map[string]any{
+			"name":           "supported",
+			"typeId":         "OS",
+			"roleAttributes": []any{},
+			"operatingSystems": []any{
+				map[string]any{"type": "Linux", "versions": []any{">=5.0.0", ">=6.0.0"}},
+				map[string]any{"type": "Windows", "versions": []any{}},
+				map[string]any{"type": "macOS", "versions": []any{">=13.0.0", ">=14.0.0"}},
+			},
+			"tags": map[string]any{},
+		},
+		update: func(mg *v1alpha1.PostureCheckOS) {
+			mg.Spec.ForProvider.OperatingSystems = []v1alpha1.OperatingSystem{
+				{Type: "iOS", Versions: []string{">=17.0.0"}},
+				{Type: "Android", Versions: []string{">=14.0.0"}},
+			}
+		},
+		updated: map[string]any{
+			"name":           "supported",
+			"typeId":         "OS",
+			"roleAttributes": []any{},
+			"operatingSystems": []any{
+				map[string]any{"type": "Android", "versions": []any{">=14.0.0"}},
+				map[string]any{"type": "iOS", "versions": []any{">=17.0.0"}},
+			},
+			"tags": map[string]any{},
+		},
+	}.run(t)
+
+	// The entity as Ziti reports it for that spec is up to date, so the
+	// provider does not update it again after the creation.
+	srv := fake.NewServer()
+	defer srv.Close()
+	srv.Put("posture-checks", map[string]any{
+		"id":             "os-1",
+		"name":           "supported",
+		"typeId":         "OS",
+		"roleAttributes": []any{},
+		"operatingSystems": []any{
+			map[string]any{"type": "Linux", "versions": []any{">=5.0.0", ">=6.0.0"}},
+			map[string]any{"type": "Windows", "versions": nil},
+			map[string]any{"type": "macOS", "versions": []any{">=13.0.0", ">=14.0.0"}},
+		},
+		"tags": map[string]any{},
+	})
+	api, err := srv.Client()
+	if err != nil {
+		t.Fatalf("cannot create client: %v", err)
+	}
+	mg := spec()
+	meta.SetExternalName(mg, "os-1")
+	o, err := generic.NewExternalClient(posturecheckos.Kind, api).Observe(context.Background(), mg)
+	if err != nil || !o.ResourceExists || !o.ResourceUpToDate {
+		t.Errorf("Observe(...) of the entity Ziti stores for the spec: want an up to date resource, got %+v, %v", o, err)
+	}
+}
+
 // TestPostureCheckSchemas checks against a real Kubernetes API server that
 // the schemas of the posture check kinds turn away what the Ziti API does,
 // and what Ziti would store as something else than was declared. Like
@@ -280,15 +360,21 @@ func TestPostureCheckSchemas(t *testing.T) {
 	}
 
 	for reason, o := range map[string]kube.Object{
-		"a domain check without domains":                        domain("invalid"),
-		"a MAC address check without addresses":                 mac("invalid"),
-		"a MAC address that is not hexadecimal":                 mac("invalid", "00:1A:2B:3C:4D:5G"),
-		"a process of an unknown operating system":              process("invalid", v1alpha1.Process{OsType: "linux", Path: "/usr/bin/agent"}),
-		"a hash with a prefix":                                  process("invalid", v1alpha1.Process{OsType: "Linux", Path: "/usr/bin/agent", Hashes: []v1alpha1.HexString{"sha512:ffee01"}}),
-		"a fingerprint that is not hexadecimal":                 process("invalid", v1alpha1.Process{OsType: "Linux", Path: "/usr/bin/agent", SignerFingerprint: "unsigned"}),
-		"a multi process check without processes":               multi("invalid", "AnyOf"),
-		"a multi process check with an unknown semantic":        multi("invalid", "anyOf", v1alpha1.MultiProcess{OsType: "Linux", Path: "/usr/bin/agent"}),
-		"a multi process check that names a process twice":      multi("invalid", "AnyOf", v1alpha1.MultiProcess{OsType: "Linux", Path: "/usr/bin/agent"}, v1alpha1.MultiProcess{OsType: "Linux", Path: "/usr/bin/agent"}),
+		"a domain check without domains":                   domain("invalid"),
+		"a MAC address check without addresses":            mac("invalid"),
+		"a MAC address that is not hexadecimal":            mac("invalid", "00:1A:2B:3C:4D:5G"),
+		"a process of an unknown operating system":         process("invalid", v1alpha1.Process{OsType: "linux", Path: "/usr/bin/agent"}),
+		"a hash with a prefix":                             process("invalid", v1alpha1.Process{OsType: "Linux", Path: "/usr/bin/agent", Hashes: []v1alpha1.HexString{"sha512:ffee01"}}),
+		"a fingerprint that is not hexadecimal":            process("invalid", v1alpha1.Process{OsType: "Linux", Path: "/usr/bin/agent", SignerFingerprint: "unsigned"}),
+		"a multi process check without processes":          multi("invalid", "AnyOf"),
+		"a multi process check with an unknown semantic":   multi("invalid", "anyOf", v1alpha1.MultiProcess{OsType: "Linux", Path: "/usr/bin/agent"}),
+		"a multi process check that names a process twice": multi("invalid", "AnyOf", v1alpha1.MultiProcess{OsType: "Linux", Path: "/usr/bin/agent"}, v1alpha1.MultiProcess{OsType: "Linux", Path: "/usr/bin/agent"}),
+		"an OS check that names an operating system twice": &v1alpha1.PostureCheckOS{
+			ObjectMeta: meta1("invalid"),
+			Spec: v1alpha1.PostureCheckOSSpec{ManagedResourceSpec: pc, ForProvider: v1alpha1.PostureCheckOSParameters{
+				Name: "invalid", OperatingSystems: []v1alpha1.OperatingSystem{{Type: "Linux"}, {Type: "Linux", Versions: []string{">=6.0.0"}}},
+			}},
+		},
 		"a multi process check with a fingerprint with a label": multi("invalid", "AnyOf", v1alpha1.MultiProcess{OsType: "Linux", Path: "/usr/bin/agent", SignerFingerprints: []v1alpha1.HexString{"sha1=a909"}}),
 	} {
 		if err := k.Create(ctx, o); !kerrors.IsInvalid(err) {

@@ -64,7 +64,9 @@ spec:
                     description: Name of the posture check.
                     type: string
                   operatingSystems:
-                    description: OperatingSystems that pass the check.
+                    description: |-
+                      OperatingSystems that pass the check. Ziti keeps one entry per type, so
+                      each type may be listed once, and their order does not matter.
                     items:
                       description: OperatingSystem defines an OS posture check constraint.
                       properties:
@@ -79,7 +81,9 @@ spec:
                           - macOS
                           type: string
                         versions:
-                          description: Versions constraint (e.g., [">=10.0.0"]).
+                          description: |-
+                            Versions constraint (e.g., [">=10.0.0"]). Ziti keeps them as a set, so
+                            their order and duplicates do not matter.
                           items:
                             type: string
                           type: array
@@ -88,6 +92,9 @@ spec:
                       type: object
                     minItems: 1
                     type: array
+                    x-kubernetes-list-map-keys:
+                    - type
+                    x-kubernetes-list-type: map
                   roleAttributes:
                     description: RoleAttributes for the posture check.
                     items:
@@ -187,7 +194,9 @@ spec:
                           - macOS
                           type: string
                         versions:
-                          description: Versions constraint (e.g., [">=10.0.0"]).
+                          description: |-
+                            Versions constraint (e.g., [">=10.0.0"]). Ziti keeps them as a set, so
+                            their order and duplicates do not matter.
                           items:
                             type: string
                           type: array
