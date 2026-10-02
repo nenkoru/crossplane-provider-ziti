@@ -99,10 +99,18 @@ func IsNotFound(err error) bool {
 
 // IsRejected returns true if the controller answered that it did not carry
 // out the request. Any other error, such as a timeout or a failure of a proxy
-// in between, leaves open whether the request took effect.
+// in between, leaves open whether the request took effect. So do a request
+// timeout and a rate limit, which proxies answer as well.
 func IsRejected(err error) bool {
 	var apiErr *Error
-	return errors.As(err, &apiErr) && apiErr.StatusCode >= http.StatusBadRequest && apiErr.StatusCode < http.StatusInternalServerError
+	if !errors.As(err, &apiErr) {
+		return false
+	}
+	switch apiErr.StatusCode {
+	case http.StatusRequestTimeout, http.StatusTooManyRequests:
+		return false
+	}
+	return apiErr.StatusCode >= http.StatusBadRequest && apiErr.StatusCode < http.StatusInternalServerError
 }
 
 func isUnauthorized(err error) bool {
