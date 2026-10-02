@@ -98,6 +98,15 @@ func (l *IdentityUPDBList) GetItems() []resource.Managed {
 	return items
 }
 
+// GetItems of this PostureCheckDomainList.
+func (l *PostureCheckDomainList) GetItems() []resource.Managed {
+	items := make([]resource.Managed, len(l.Items))
+	for i := range l.Items {
+		items[i] = &l.Items[i]
+	}
+	return items
+}
+
 // GetItems of this PostureCheckMFAList.
 func (l *PostureCheckMFAList) GetItems() []resource.Managed {
 	items := make([]resource.Managed, len(l.Items))
@@ -107,8 +116,35 @@ func (l *PostureCheckMFAList) GetItems() []resource.Managed {
 	return items
 }
 
+// GetItems of this PostureCheckMacList.
+func (l *PostureCheckMacList) GetItems() []resource.Managed {
+	items := make([]resource.Managed, len(l.Items))
+	for i := range l.Items {
+		items[i] = &l.Items[i]
+	}
+	return items
+}
+
+// GetItems of this PostureCheckMultiProcessList.
+func (l *PostureCheckMultiProcessList) GetItems() []resource.Managed {
+	items := make([]resource.Managed, len(l.Items))
+	for i := range l.Items {
+		items[i] = &l.Items[i]
+	}
+	return items
+}
+
 // GetItems of this PostureCheckOSList.
 func (l *PostureCheckOSList) GetItems() []resource.Managed {
+	items := make([]resource.Managed, len(l.Items))
+	for i := range l.Items {
+		items[i] = &l.Items[i]
+	}
+	return items
+}
+
+// GetItems of this PostureCheckProcessList.
+func (l *PostureCheckProcessList) GetItems() []resource.Managed {
 	items := make([]resource.Managed, len(l.Items))
 	for i := range l.Items {
 		items[i] = &l.Items[i]

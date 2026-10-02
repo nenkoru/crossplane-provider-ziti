@@ -408,6 +408,46 @@ func (mg *IdentityUPDB) SetWriteConnectionSecretToReference(r *xpv2.LocalSecretR
 	mg.Spec.WriteConnectionSecretToReference = r
 }
 
+// GetCondition of this PostureCheckDomain.
+func (mg *PostureCheckDomain) GetCondition(ct xpv2.ConditionType) xpv2.Condition {
+	return mg.Status.GetCondition(ct)
+}
+
+// GetManagementPolicies of this PostureCheckDomain.
+func (mg *PostureCheckDomain) GetManagementPolicies() xpv2.ManagementPolicies {
+	return mg.Spec.ManagementPolicies
+}
+
+// GetProviderConfigReference of this PostureCheckDomain.
+func (mg *PostureCheckDomain) GetProviderConfigReference() *xpv2.ProviderConfigReference {
+	return mg.Spec.ProviderConfigReference
+}
+
+// GetWriteConnectionSecretToReference of this PostureCheckDomain.
+func (mg *PostureCheckDomain) GetWriteConnectionSecretToReference() *xpv2.LocalSecretReference {
+	return mg.Spec.WriteConnectionSecretToReference
+}
+
+// SetConditions of this PostureCheckDomain.
+func (mg *PostureCheckDomain) SetConditions(c ...xpv2.Condition) {
+	mg.Status.SetConditions(c...)
+}
+
+// SetManagementPolicies of this PostureCheckDomain.
+func (mg *PostureCheckDomain) SetManagementPolicies(r xpv2.ManagementPolicies) {
+	mg.Spec.ManagementPolicies = r
+}
+
+// SetProviderConfigReference of this PostureCheckDomain.
+func (mg *PostureCheckDomain) SetProviderConfigReference(r *xpv2.ProviderConfigReference) {
+	mg.Spec.ProviderConfigReference = r
+}
+
+// SetWriteConnectionSecretToReference of this PostureCheckDomain.
+func (mg *PostureCheckDomain) SetWriteConnectionSecretToReference(r *xpv2.LocalSecretReference) {
+	mg.Spec.WriteConnectionSecretToReference = r
+}
+
 // GetCondition of this PostureCheckMFA.
 func (mg *PostureCheckMFA) GetCondition(ct xpv2.ConditionType) xpv2.Condition {
 	return mg.Status.GetCondition(ct)
@@ -448,6 +488,86 @@ func (mg *PostureCheckMFA) SetWriteConnectionSecretToReference(r *xpv2.LocalSecr
 	mg.Spec.WriteConnectionSecretToReference = r
 }
 
+// GetCondition of this PostureCheckMac.
+func (mg *PostureCheckMac) GetCondition(ct xpv2.ConditionType) xpv2.Condition {
+	return mg.Status.GetCondition(ct)
+}
+
+// GetManagementPolicies of this PostureCheckMac.
+func (mg *PostureCheckMac) GetManagementPolicies() xpv2.ManagementPolicies {
+	return mg.Spec.ManagementPolicies
+}
+
+// GetProviderConfigReference of this PostureCheckMac.
+func (mg *PostureCheckMac) GetProviderConfigReference() *xpv2.ProviderConfigReference {
+	return mg.Spec.ProviderConfigReference
+}
+
+// GetWriteConnectionSecretToReference of this PostureCheckMac.
+func (mg *PostureCheckMac) GetWriteConnectionSecretToReference() *xpv2.LocalSecretReference {
+	return mg.Spec.WriteConnectionSecretToReference
+}
+
+// SetConditions of this PostureCheckMac.
+func (mg *PostureCheckMac) SetConditions(c ...xpv2.Condition) {
+	mg.Status.SetConditions(c...)
+}
+
+// SetManagementPolicies of this PostureCheckMac.
+func (mg *PostureCheckMac) SetManagementPolicies(r xpv2.ManagementPolicies) {
+	mg.Spec.ManagementPolicies = r
+}
+
+// SetProviderConfigReference of this PostureCheckMac.
+func (mg *PostureCheckMac) SetProviderConfigReference(r *xpv2.ProviderConfigReference) {
+	mg.Spec.ProviderConfigReference = r
+}
+
+// SetWriteConnectionSecretToReference of this PostureCheckMac.
+func (mg *PostureCheckMac) SetWriteConnectionSecretToReference(r *xpv2.LocalSecretReference) {
+	mg.Spec.WriteConnectionSecretToReference = r
+}
+
+// GetCondition of this PostureCheckMultiProcess.
+func (mg *PostureCheckMultiProcess) GetCondition(ct xpv2.ConditionType) xpv2.Condition {
+	return mg.Status.GetCondition(ct)
+}
+
+// GetManagementPolicies of this PostureCheckMultiProcess.
+func (mg *PostureCheckMultiProcess) GetManagementPolicies() xpv2.ManagementPolicies {
+	return mg.Spec.ManagementPolicies
+}
+
+// GetProviderConfigReference of this PostureCheckMultiProcess.
+func (mg *PostureCheckMultiProcess) GetProviderConfigReference() *xpv2.ProviderConfigReference {
+	return mg.Spec.ProviderConfigReference
+}
+
+// GetWriteConnectionSecretToReference of this PostureCheckMultiProcess.
+func (mg *PostureCheckMultiProcess) GetWriteConnectionSecretToReference() *xpv2.LocalSecretReference {
+	return mg.Spec.WriteConnectionSecretToReference
+}
+
+// SetConditions of this PostureCheckMultiProcess.
+func (mg *PostureCheckMultiProcess) SetConditions(c ...xpv2.Condition) {
+	mg.Status.SetConditions(c...)
+}
+
+// SetManagementPolicies of this PostureCheckMultiProcess.
+func (mg *PostureCheckMultiProcess) SetManagementPolicies(r xpv2.ManagementPolicies) {
+	mg.Spec.ManagementPolicies = r
+}
+
+// SetProviderConfigReference of this PostureCheckMultiProcess.
+func (mg *PostureCheckMultiProcess) SetProviderConfigReference(r *xpv2.ProviderConfigReference) {
+	mg.Spec.ProviderConfigReference = r
+}
+
+// SetWriteConnectionSecretToReference of this PostureCheckMultiProcess.
+func (mg *PostureCheckMultiProcess) SetWriteConnectionSecretToReference(r *xpv2.LocalSecretReference) {
+	mg.Spec.WriteConnectionSecretToReference = r
+}
+
 // GetCondition of this PostureCheckOS.
 func (mg *PostureCheckOS) GetCondition(ct xpv2.ConditionType) xpv2.Condition {
 	return mg.Status.GetCondition(ct)
@@ -485,6 +605,46 @@ func (mg *PostureCheckOS) SetProviderConfigReference(r *xpv2.ProviderConfigRefer
 
 // SetWriteConnectionSecretToReference of this PostureCheckOS.
 func (mg *PostureCheckOS) SetWriteConnectionSecretToReference(r *xpv2.LocalSecretReference) {
+	mg.Spec.WriteConnectionSecretToReference = r
+}
+
+// GetCondition of this PostureCheckProcess.
+func (mg *PostureCheckProcess) GetCondition(ct xpv2.ConditionType) xpv2.Condition {
+	return mg.Status.GetCondition(ct)
+}
+
+// GetManagementPolicies of this PostureCheckProcess.
+func (mg *PostureCheckProcess) GetManagementPolicies() xpv2.ManagementPolicies {
+	return mg.Spec.ManagementPolicies
+}
+
+// GetProviderConfigReference of this PostureCheckProcess.
+func (mg *PostureCheckProcess) GetProviderConfigReference() *xpv2.ProviderConfigReference {
+	return mg.Spec.ProviderConfigReference
+}
+
+// GetWriteConnectionSecretToReference of this PostureCheckProcess.
+func (mg *PostureCheckProcess) GetWriteConnectionSecretToReference() *xpv2.LocalSecretReference {
+	return mg.Spec.WriteConnectionSecretToReference
+}
+
+// SetConditions of this PostureCheckProcess.
+func (mg *PostureCheckProcess) SetConditions(c ...xpv2.Condition) {
+	mg.Status.SetConditions(c...)
+}
+
+// SetManagementPolicies of this PostureCheckProcess.
+func (mg *PostureCheckProcess) SetManagementPolicies(r xpv2.ManagementPolicies) {
+	mg.Spec.ManagementPolicies = r
+}
+
+// SetProviderConfigReference of this PostureCheckProcess.
+func (mg *PostureCheckProcess) SetProviderConfigReference(r *xpv2.ProviderConfigReference) {
+	mg.Spec.ProviderConfigReference = r
+}
+
+// SetWriteConnectionSecretToReference of this PostureCheckProcess.
+func (mg *PostureCheckProcess) SetWriteConnectionSecretToReference(r *xpv2.LocalSecretReference) {
 	mg.Spec.WriteConnectionSecretToReference = r
 }
 

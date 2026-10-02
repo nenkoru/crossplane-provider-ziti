@@ -1,0 +1,18 @@
+apiVersion: ziti.crossplane.io/v1alpha1
+kind: PostureCheckMac
+metadata:
+  name: registered-devices
+spec:
+  providerConfigRef:
+    kind: ProviderConfig
+    name: default
+  forProvider:
+    name: registered-devices
+    # Quoted, so that YAML does not read an address of digits as a number.
+    # Either case and the separators ":", "-" and "." are accepted; Ziti
+    # stores the addresses in lower case and without separators.
+    macAddresses:
+      - "0A-1B-2C-3D-4E-5F"
+      - "00:1a:2b:3c:4d:5e"
+    roleAttributes:
+      - registered-devices

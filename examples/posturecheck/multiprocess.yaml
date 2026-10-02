@@ -1,0 +1,25 @@
+apiVersion: ziti.crossplane.io/v1alpha1
+kind: PostureCheckMultiProcess
+metadata:
+  name: endpoint-agents
+spec:
+  providerConfigRef:
+    kind: ProviderConfig
+    name: default
+  forProvider:
+    name: endpoint-agents
+    # AnyOf: one of the processes must be running. AllOf: all of them.
+    semantic: AnyOf
+    # A pair of operating system and path may be listed once.
+    processes:
+      - osType: macOS
+        path: /Library/Endpoint Agent/agent
+        signerFingerprints:
+          - "F5:B9:8B:6F:B4:46:F0:74:38:F2:FA:72:F5:5D:60:ED:D8:B7:E3:61"
+      - osType: Linux
+        path: /opt/endpoint-agent/bin/agent
+        hashes:
+          - "a7fe5c886fad6bc932ada51ac4d35faa43a2f0a29bfd3122e1b28c1d4a1e4e5f33eb5f61b21ffe12994411445e855563266ff093d853279acc240ee426d60ab3"
+          - "085B1D2647E1800B17809504600D01839F13FEF57E647609B8C4A79B24C924B5281A01AE321606B1B820DC951A11470058B222400E5017E2144B5083D2617A97"
+    roleAttributes:
+      - managed-devices
