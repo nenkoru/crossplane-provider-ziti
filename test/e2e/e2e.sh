@@ -29,6 +29,9 @@ CLUSTER="${E2E_CLUSTER:-provider-ziti-e2e}"
 COMPOSE_FILE="${ROOT}/ziti-docker-compose.yml"
 COMPOSE_PROJECT="provider-ziti-e2e"
 
+# The OpenZiti release "up" starts. The compose file itself follows latest.
+export ZITI_VERSION="${ZITI_VERSION:-2.0.6}"
+
 ZITI_URL="${ZITI_URL:-https://localhost:1280}"
 ZITI_USER="${ZITI_USER:-admin}"
 ZITI_PWD="${ZITI_PWD:-admin}"
@@ -85,6 +88,13 @@ ziti_login() {
 # ziti_get <collection> <id> prints the entity.
 ziti_get() {
 	curl -sk --fail -H "zt-session: ${ZITI_TOKEN}" "${ZITI_API}/$1/$2" | jq '.data'
+}
+
+# ziti_post <collection> <json> creates an entity behind the provider's back
+# and prints its ID.
+ziti_post() {
+	curl -sk --fail -X POST -H "zt-session: ${ZITI_TOKEN}" -H 'Content-Type: application/json' \
+		-d "$2" "${ZITI_API}/$1" | jq -er '.data.id'
 }
 
 # ziti_patch <collection> <id> <json> changes the entity behind the provider's back.
@@ -209,6 +219,13 @@ expect_settled() {
 		diff <(echo "${before}") <(echo "${after}") >&2 || true
 		fail "${description}: entities were updated within ${SETTLE}s without a spec change"
 	fi
+}
+
+# redact masks tokens and passwords, so that none ends up in a build log.
+redact() {
+	sed -E \
+		-e 's/eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+/<redacted JWT>/g' \
+		-e 's/("?(token|zt-session|password|secret)"?[=:] ?"?)[^" ,}]+/\1<redacted>/g'
 }
 
 apply() {
@@ -343,6 +360,33 @@ EOF
 	entity_matches identities "${client}" '.roleAttributes == ["tampered"]' >/dev/null || fail "could not tamper with the identity"
 	eventually "identity role attributes are restored" entity_matches identities "${client}" '.roleAttributes == ["web-clients"]'
 
+	step "A creation that was interrupted before the Ziti ID was saved is recovered"
+	local started left_behind
+	started="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+	left_behind="$(ziti_post services '{"name": "e2e-interrupted", "encryptionRequired": true}')" || fail "cannot create a service in Ziti"
+	kubectl apply -f - <<EOF
+apiVersion: ${GROUP}/v1alpha1
+kind: Service
+metadata:
+  name: e2e-interrupted
+  namespace: default
+  annotations:
+    crossplane.io/external-create-pending: "${started}"
+spec:
+  providerConfigRef:
+    kind: ProviderConfig
+    name: default
+  forProvider:
+    name: e2e-interrupted
+    roleAttributes:
+      - e2e
+EOF
+	kubectl wait --for=condition=Ready --timeout="${TIMEOUT}s" "services.${GROUP}/e2e-interrupted"
+	expect "service takes over the entity its creation left behind" "$(mr_id services e2e-interrupted)" "${left_behind}"
+	eventually "the entity follows the spec" entity_matches services "${left_behind}" '.roleAttributes == ["e2e"]'
+	kubectl delete --wait --timeout="${TIMEOUT}s" "services.${GROUP}/e2e-interrupted"
+	expect_gone "recovered service is gone" services e2e-interrupted
+
 	step "Nothing is updated without a spec change"
 	core_stamps() {
 		stamps configs "${host}" "${intercept}"
@@ -438,9 +482,9 @@ logs() {
 		jq -r '.items[] | select(([.status.conditions[]? | select(.type == "Ready" and .status == "True")] | length) == 0)
 			| "\(.kind)/\(.metadata.name): " + ([.status.conditions[]? | "\(.type)=\(.status) \(.reason) \(.message // "")"] | join("; "))' || true
 	step "Provider log (last 200 lines)"
-	tail -n 200 "${WORK}/provider.log" 2>/dev/null || true
+	tail -n 200 "${WORK}/provider.log" 2>/dev/null | redact || true
 	step "Ziti controller log (last 50 lines)"
-	docker compose -p "${COMPOSE_PROJECT}" -f "${COMPOSE_FILE}" logs --tail 50 ziti-controller 2>&1 || true
+	docker compose -p "${COMPOSE_PROJECT}" -f "${COMPOSE_FILE}" logs --tail 50 ziti-controller 2>&1 | redact || true
 }
 
 down() {

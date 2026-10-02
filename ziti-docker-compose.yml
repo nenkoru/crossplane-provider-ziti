@@ -1,6 +1,6 @@
 services:
   ziti-controller:
-    image: "openziti/quickstart:latest"
+    image: "openziti/quickstart:${ZITI_VERSION:-latest}"
     healthcheck:
       test: curl -m 1 -s -k -f https://${ZITI_CTRL_EDGE_ADVERTISED_ADDRESS:-ziti-edge-controller}:${ZITI_CTRL_EDGE_ADVERTISED_PORT:-1280}/edge/client/v1/version
       interval: 1s
@@ -29,7 +29,7 @@ services:
       - "/var/openziti/scripts/run-controller.sh"
 
   ziti-controller-init-container:
-    image: "openziti/quickstart:latest"
+    image: "openziti/quickstart:${ZITI_VERSION:-latest}"
     depends_on:
       ziti-controller:
         condition: service_healthy
