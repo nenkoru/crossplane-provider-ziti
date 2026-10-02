@@ -1,39 +1,69 @@
-# provider-template
+# provider-ziti
 
-`provider-template` is a minimal [Crossplane](https://crossplane.io/) Provider
-that is meant to be used as a template for implementing new Providers. It comes
-with the following features that are meant to be refactored:
+`provider-ziti` is a [Crossplane](https://crossplane.io/) Provider that manages
+[OpenZiti](https://openziti.io/) resources on Kubernetes. It allows you to define
+Ziti services, edge routers, policies, configurations, identities, and posture
+checks as native Kubernetes resources.
 
-- A `ProviderConfig` type that only points to a credentials `Secret`.
-- A `MyType` resource type that serves as an example managed resource.
-- A managed resource controller that reconciles `MyType` objects and simply
-  prints their configuration in its `Observe` method.
+## Resources
 
-## Developing
+| Kind | Description |
+|------|-------------|
+| `Service` | Ziti service definitions |
+| `EdgeRouter` | Edge router configurations |
+| `ServicePolicy` | Service ↔ identity binding policies |
+| `ServiceEdgeRouterPolicy` | Service ↔ edge router binding policies |
+| `EdgeRouterPolicy` | Edge router ↔ identity binding policies |
+| `ConfigHostV1` | Host configuration (V1) |
+| `ConfigHostV2` | Host configuration (V2) |
+| `ConfigInterceptV1` | Intercept configuration |
+| `Identity` | Service identity (OTT enrollment) |
+| `IdentityCA` | Service identity (CA enrollment) |
+| `IdentityUPDB` | Service identity (UPDB enrollment) |
+| `IdentityNone` | Service identity (no enrollment) |
+| `PostureCheckDomain` | Domain posture check |
+| `PostureCheckMac` | MAC address posture check |
+| `PostureCheckMFA` | MFA posture check |
+| `PostureCheckOS` | OS posture check |
+| `PostureCheckProcess` | Process posture check |
+| `PostureCheckMultiProcess` | Multi-process posture check |
+| `AuthPolicy` | Authentication policy |
+| `CertificateAuthority` | Certificate authority |
+| `ExternalJWTSigner` | External JWT signer |
 
-1. Use this repository as a template to create a new one.
-1. Run `make submodules` to initialize the "build" Make submodule we use for CI/CD.
-1. Rename the provider by running the following command:
+## Quick Start
+
+1. Install the provider package:
+
 ```shell
-  export provider_name=MyProvider # Camel case, e.g. GitHub
-  make provider.prepare provider=${provider_name}
+up xpkg install xpkg.upbound.io/crossplane/provider-ziti
 ```
-4. Add your new type by running the following command:
-```shell
-  export group=sample # lower case e.g. core, cache, database, storage, etc.
-  export type=MyType # Camel casee.g. Bucket, Database, CacheCluster, etc.
-  make provider.addtype provider=${provider_name} group=${group} kind=${type}
+
+1. Create a `ProviderConfig`:
+
+```yaml
+apiVersion: ziti.crossplane.io/v1alpha1
+kind: ProviderConfig
+metadata:
+  name: default
+spec:
+  host: https://controller.example.com:441
+  username: admin
+  password: supersecret
 ```
-5. Replace the *sample* group with your new group in apis/{provider}.go
-5. Replace the *mytype* type with your new type in internal/controller/{provider}.go
-5. Replace the default controller and ProviderConfig implementations with your own
-5. Register your new type into `SetupGated` function in `internal/controller/register.go`
-5. Run `make reviewable` to run code generation, linters, and tests.
-5. Run `make build` to build the provider.
 
-Refer to Crossplane's [CONTRIBUTING.md] file for more information on how the
-Crossplane community prefers to work. The [Provider Development][provider-dev]
-guide may also be of use.
+1. Create Ziti resources:
 
-[CONTRIBUTING.md]: https://github.com/crossplane/crossplane/blob/master/CONTRIBUTING.md
-[provider-dev]: https://github.com/crossplane/crossplane/blob/master/contributing/guide-provider-development.md
+```yaml
+apiVersion: ziti.crossplane.io/v1alpha1
+kind: Service
+metadata:
+  name: my-service
+spec:
+  forProvider:
+    name: my-service
+    encryptionRequired: false
+    terminatorStrategy: Closest
+  providerConfigRef:
+    name: default
+```
