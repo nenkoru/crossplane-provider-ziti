@@ -28,10 +28,10 @@ namespaced, and a cluster-scoped `ClusterProviderConfig` is available.
 | `PostureCheckOS` | posture check of type OS | yes | yes | yes | yes | extended |
 | `PostureCheckMFA` | posture check of type MFA | yes | yes | yes | yes | extended |
 | `AuthPolicy` | auth policy | yes | yes | yes | yes | extended |
-| `ConfigHostV2` | config of type `host.v2` | no | no | no | no | no |
-| `IdentityCA` | identity, CA enrollment | no | no | no | no | no |
-| `IdentityUPDB` | identity, password enrollment | no | no | no | no | no |
-| `IdentityNone` | identity without enrollment | no | no | no | no | no |
+| `ConfigHostV2` | config of type `host.v2` | yes | yes | yes | yes | extended |
+| `IdentityCA` | identity, enrollment with a certificate of a third-party CA | yes | yes | yes | yes | extended |
+| `IdentityUPDB` | identity, password enrollment | yes | yes | yes | yes | extended |
+| `IdentityNone` | identity without enrollment | yes | yes | yes | yes | extended |
 | `PostureCheckDomain` | posture check of type DOMAIN | no | no | no | no | no |
 | `PostureCheckMac` | posture check of type MAC | no | no | no | no | no |
 | `PostureCheckProcess` | posture check of type PROCESS | no | no | no | no | no |
@@ -49,7 +49,7 @@ How to read the table:
   covers the kind against a real OpenZiti controller: the entity is created
   as declared, follows a spec change, is not touched without one, and is
   deleted with its managed resource. CI runs it on every pull request
-  against OpenZiti 2.0.6, and all eleven kinds pass.
+  against OpenZiti 2.0.6, and all fifteen kinds that have a controller pass.
 
 ## How it behaves
 
@@ -58,29 +58,41 @@ How to read the table:
   entity, create the managed resource with the annotation set to its ID. An
   entity that merely has the same name is never taken over: creating the
   managed resource fails with the name conflict Ziti reports.
-- **Interrupted creation.** If the provider stops after Ziti created the
-  entity and before the ID was saved, the next reconcile finds the entity by
-  its name and continues with it, provided it is not older than the creation
-  that was interrupted. If an older entity has the name, the resource stays
-  blocked with Crossplane's "cannot determine creation result" error until
-  you set the external name yourself or remove the
-  `crossplane.io/external-create-pending` annotation.
+- **Creation with an unknown result.** The provider may stop after Ziti
+  created the entity and before the ID was saved, or the answer of Ziti may
+  get lost on the way. The next reconcile then finds the entity by its name
+  and continues with it, provided Ziti created it after that creation
+  started; the clocks of the controller and the provider are compared for
+  this, to within five seconds. An entity that had the name before is left
+  alone: the resource reports the name conflict and can be deleted without
+  touching it. A request that was not answered stays on record in the
+  `ziti.crossplane.io/create-unconfirmed` annotation until it is settled.
 - **Drift.** Every field the provider sends is compared with what Ziti
   reports, on every poll (one minute by default, `--poll`). A change made in
   Ziti directly is reverted. Optional settings that are left unset in the
-  spec are not managed, except lists and `tags`, which are cleared when unset.
-- **References by name.** `Service.configs` takes config names or IDs. Policy
+  spec are not managed, except lists and maps (`tags`, and `appData`,
+  `serviceHostingCosts` and `serviceHostingPrecedences` of an identity),
+  which are cleared when unset.
+- **References by name.** `Service.configs` takes config names or IDs, and so
+  do `authPolicyId` and the keys of `serviceHostingCosts` and
+  `serviceHostingPrecedences` of an identity, and `IdentityCA.ottca`. Policy
   roles take `#attribute`, `#all` or `@name`, where the name is resolved to an
   ID. A resource that refers to something that does not exist yet reports the
   error in its `Synced` condition and is retried.
-- **Enrollment tokens.** `Identity` and `EdgeRouter` write their enrollment
-  JWT to the Secret named in `spec.writeConnectionSecretToRef`, under the key
-  `enrollmentToken`. Ziti stops reporting the token once it is used; the
-  Secret keeps the last one. An expired token is not renewed yet.
+- **Identities.** The four identity kinds take the same settings and differ
+  in how the identity enrolls: `Identity` with a one-time token, `IdentityCA`
+  with a one-time token and a certificate of a third-party CA,
+  `IdentityUPDB` by choosing a password, `IdentityNone` not at all.
+- **Enrollment tokens.** `Identity`, `IdentityCA`, `IdentityUPDB` and
+  `EdgeRouter` write their enrollment JWT to the Secret named in
+  `spec.writeConnectionSecretToRef`, under the key `enrollmentToken`. Ziti
+  stops reporting the token once it is used; the Secret keeps the last one.
+  An expired token is not renewed yet.
 - **Deletion.** Deleting a managed resource deletes the Ziti entity. Set
   `spec.managementPolicies` to keep it.
-- **Immutable settings.** The `type` of an `Identity` cannot be changed after
-  creation; the API server rejects the change.
+- **Immutable settings.** The `type` of an identity, `IdentityCA.ottca` and
+  `IdentityUPDB.updbUsername` cannot be changed after creation; the API
+  server rejects the change.
 - **Updates.** Entities are updated with `PATCH`, so settings the provider
   does not manage are left alone. `Service` and `AuthPolicy` are replaced
   with `PUT` instead: a `PATCH` of a service ignores `encryptionRequired`, and
@@ -223,7 +235,7 @@ after cloning without `--recurse-submodules`.
 | `make lint` | Runs golangci-lint. |
 | `make test` | Runs the unit tests and the controller integration test, which starts a Kubernetes API server with envtest. |
 | `make reviewable` | Runs all of the above; do this before opening a pull request. |
-| `make e2e.ziti` | Runs the end-to-end test. Needs docker, kind, kubectl, curl and jq. |
+| `make e2e.ziti` | Runs the end-to-end test. Needs docker, kind, kubectl, curl, jq and openssl. |
 
 How the code is organized:
 
@@ -258,8 +270,8 @@ entities.
 
 1. Give the end-to-end suite its own CI job; the `unit-tests` job runs it for
    now.
-2. Add the missing kinds, starting with `ConfigHostV2` and the other identity
-   enrollments.
+2. Add the missing kinds: the remaining posture checks,
+   `CertificateAuthority` and `ExternalJWTSigner`.
 3. Renew expired enrollment tokens.
 4. Package and install the provider through Crossplane in the end-to-end test,
    then publish a first release.

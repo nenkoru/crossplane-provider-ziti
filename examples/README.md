@@ -11,7 +11,11 @@ kind by `go test ./apis/...`.
 | `service/service.yaml` | A service with a host and an intercept config. |
 | `service/advanced.yaml` | Every setting of the host and intercept configs. |
 | `service/ha.yaml` | A service with the `ha` terminator strategy. |
+| `service/hostv2.yaml` | A service hosted at two destinations with a `host.v2` config. |
 | `identity/identity.yaml` | Identities whose enrollment token is written to a Secret. |
+| `identity/ca.yaml` | An identity that enrolls with a certificate of a third-party CA. |
+| `identity/updb.yaml` | An identity that authenticates with a username and a password. |
+| `identity/none.yaml` | An identity without an enrollment, for an external JWT signer. |
 | `servicepolicy/servicepolicy.yaml` | Who may dial and who may host the service of `service/service.yaml`. |
 | `edgerouter/edgerouter.yaml` | An edge router whose enrollment token is written to a Secret. |
 | `edgerouterpolicy/edgerouterpolicy.yaml` | Which identities may use which edge routers. |
