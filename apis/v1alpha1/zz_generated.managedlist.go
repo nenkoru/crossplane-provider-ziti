@@ -17,6 +17,15 @@ func (l *AuthPolicyList) GetItems() []resource.Managed {
 	return items
 }
 
+// GetItems of this CertificateAuthorityList.
+func (l *CertificateAuthorityList) GetItems() []resource.Managed {
+	items := make([]resource.Managed, len(l.Items))
+	for i := range l.Items {
+		items[i] = &l.Items[i]
+	}
+	return items
+}
+
 // GetItems of this ConfigHostV1List.
 func (l *ConfigHostV1List) GetItems() []resource.Managed {
 	items := make([]resource.Managed, len(l.Items))
@@ -55,6 +64,15 @@ func (l *EdgeRouterList) GetItems() []resource.Managed {
 
 // GetItems of this EdgeRouterPolicyList.
 func (l *EdgeRouterPolicyList) GetItems() []resource.Managed {
+	items := make([]resource.Managed, len(l.Items))
+	for i := range l.Items {
+		items[i] = &l.Items[i]
+	}
+	return items
+}
+
+// GetItems of this ExternalJWTSignerList.
+func (l *ExternalJWTSignerList) GetItems() []resource.Managed {
 	items := make([]resource.Managed, len(l.Items))
 	for i := range l.Items {
 		items[i] = &l.Items[i]

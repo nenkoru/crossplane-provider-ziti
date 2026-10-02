@@ -1,0 +1,422 @@
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  annotations:
+    controller-gen.kubebuilder.io/version: v0.20.0
+  name: certificateauthorities.ziti.crossplane.io
+spec:
+  group: ziti.crossplane.io
+  names:
+    categories:
+    - crossplane
+    - managed
+    - ziti
+    kind: CertificateAuthority
+    listKind: CertificateAuthorityList
+    plural: certificateauthorities
+    singular: certificateauthority
+  scope: Namespaced
+  versions:
+  - additionalPrinterColumns:
+    - jsonPath: .spec.forProvider.name
+      name: NAME
+      type: string
+    - jsonPath: .status.atProvider.id
+      name: ID
+      type: string
+    - jsonPath: .status.atProvider.isVerified
+      name: VERIFIED
+      type: boolean
+    - jsonPath: .status.conditions[?(@.type=="Ready")].status
+      name: READY
+      type: string
+    - jsonPath: .metadata.creationTimestamp
+      name: AGE
+      type: date
+    name: v1alpha1
+    schema:
+      openAPIV3Schema:
+        description: |-
+          CertificateAuthority is a third-party certificate authority whose
+          certificates Ziti accepts for enrollment and authentication. It is ready
+          when it exists in Ziti as declared, verified or not: only the holder of
+          its private key can verify it, see status.atProvider.verificationToken.
+        properties:
+          apiVersion:
+            description: |-
+              APIVersion defines the versioned schema of this representation of an object.
+              Servers should convert recognized schemas to the latest internal value, and
+              may reject unrecognized values.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
+            type: string
+          kind:
+            description: |-
+              Kind is a string value representing the REST resource this object represents.
+              Servers may infer this from the endpoint the client submits requests to.
+              Cannot be updated.
+              In CamelCase.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
+            type: string
+          metadata:
+            type: object
+          spec:
+            description: |-
+              CertificateAuthoritySpec defines the desired state of a
+              CertificateAuthority.
+            properties:
+              forProvider:
+                description: |-
+                  CertificateAuthorityParameters define the desired state of a Ziti
+                  certificate authority.
+                properties:
+                  certPem:
+                    description: |-
+                      CertPem is the PEM encoded certificate of the certificate authority. It
+                      must be a CA certificate that no other certificate authority in Ziti
+                      has, and it cannot be changed after creation.
+                    minLength: 1
+                    type: string
+                    x-kubernetes-validations:
+                    - message: certPem cannot be changed after creation
+                      rule: self == oldSelf
+                  externalIdClaim:
+                    description: |-
+                      ExternalIDClaim takes the external ID of an identity from its
+                      certificate. Without it, identities are recognized by the fingerprint
+                      of their certificate.
+                    properties:
+                      index:
+                        description: Index of the external ID to use among the ones
+                          found, starting at zero.
+                        format: int64
+                        minimum: 0
+                        type: integer
+                      location:
+                        default: COMMON_NAME
+                        description: |-
+                          Location of the values in the certificate: its common name, or the
+                          URIs or email addresses of its subject alternative names.
+                        enum:
+                        - COMMON_NAME
+                        - SAN_URI
+                        - SAN_EMAIL
+                        type: string
+                      matcher:
+                        default: ALL
+                        description: |-
+                          Matcher selects the values to consider: ALL of them, those with a
+                          PREFIX or a SUFFIX, or the URIs with a SCHEME.
+                        enum:
+                        - ALL
+                        - PREFIX
+                        - SUFFIX
+                        - SCHEME
+                        type: string
+                      matcherCriteria:
+                        description: MatcherCriteria is the prefix, suffix or scheme
+                          the matcher looks for.
+                        type: string
+                      parser:
+                        default: NONE
+                        description: |-
+                          Parser turns a selected value into external IDs: NONE takes it as is,
+                          SPLIT splits it at a separator.
+                        enum:
+                        - NONE
+                        - SPLIT
+                        type: string
+                      parserCriteria:
+                        description: ParserCriteria is the separator of the SPLIT
+                          parser.
+                        type: string
+                    type: object
+                    x-kubernetes-validations:
+                    - message: the SCHEME matcher is for the SAN_URI location, which
+                        takes no PREFIX or SUFFIX matcher
+                      rule: 'self.location == ''SAN_URI'' ? self.matcher in [''ALL'',
+                        ''SCHEME''] : self.matcher != ''SCHEME'''
+                    - message: matcherCriteria is required unless the matcher is ALL
+                      rule: self.matcher == 'ALL' || (has(self.matcherCriteria) &&
+                        size(self.matcherCriteria) > 0)
+                    - message: parserCriteria is required for the SPLIT parser
+                      rule: self.parser == 'NONE' || (has(self.parserCriteria) &&
+                        size(self.parserCriteria) > 0)
+                  identityNameFormat:
+                    default: '[caName]-[commonName]'
+                    description: |-
+                      IdentityNameFormat is the name of the identities that automatic
+                      enrollment creates. It may contain [caName], [caId], [commonName],
+                      [requestedName] and [identityId].
+                    minLength: 1
+                    type: string
+                  identityRoles:
+                    description: |-
+                      IdentityRoles are the role attributes of the identities that automatic
+                      enrollment creates.
+                    items:
+                      type: string
+                    type: array
+                    x-kubernetes-list-type: set
+                  isAuthEnabled:
+                    description: |-
+                      IsAuthEnabled lets identities authenticate with a certificate of this
+                      certificate authority.
+                    type: boolean
+                  isAutoCaEnrollmentEnabled:
+                    description: |-
+                      IsAutoCaEnrollmentEnabled lets anyone with a certificate of this
+                      certificate authority enroll, which creates an identity.
+                    type: boolean
+                  isOttCaEnrollmentEnabled:
+                    description: |-
+                      IsOttCaEnrollmentEnabled lets identities enroll with a one-time token
+                      and a certificate of this certificate authority.
+                    type: boolean
+                  name:
+                    description: Name of the certificate authority.
+                    type: string
+                  tags:
+                    additionalProperties:
+                      type: string
+                    description: Tags is a map of tags.
+                    type: object
+                required:
+                - certPem
+                - name
+                type: object
+              managementPolicies:
+                default:
+                - '*'
+                description: |-
+                  THIS IS A BETA FIELD. It is on by default but can be opted out
+                  through a Crossplane feature flag.
+                  ManagementPolicies specify the array of actions Crossplane is allowed to
+                  take on the managed and external resources.
+                  See the design doc for more information: https://github.com/crossplane/crossplane/blob/499895a25d1a1a0ba1604944ef98ac7a1a71f197/design/design-doc-observe-only-resources.md?plain=1#L223
+                  and this one: https://github.com/crossplane/crossplane/blob/444267e84783136daa93568b364a5f01228cacbe/design/one-pager-ignore-changes.md
+                items:
+                  description: |-
+                    A ManagementAction represents an action that the Crossplane controllers
+                    can take on an external resource.
+                  enum:
+                  - Observe
+                  - Create
+                  - Update
+                  - Delete
+                  - LateInitialize
+                  - '*'
+                  type: string
+                type: array
+              providerConfigRef:
+                default:
+                  kind: ClusterProviderConfig
+                  name: default
+                description: |-
+                  ProviderConfigReference specifies how the provider that will be used to
+                  create, observe, update, and delete this managed resource should be
+                  configured.
+                properties:
+                  kind:
+                    description: Kind of the referenced object.
+                    type: string
+                  name:
+                    description: Name of the referenced object.
+                    type: string
+                required:
+                - kind
+                - name
+                type: object
+              writeConnectionSecretToRef:
+                description: |-
+                  WriteConnectionSecretToReference specifies the namespace and name of a
+                  Secret to which any connection details for this managed resource should
+                  be written. Connection details frequently include the endpoint, username,
+                  and password required to connect to the managed resource.
+                properties:
+                  name:
+                    description: Name of the secret.
+                    type: string
+                required:
+                - name
+                type: object
+            required:
+            - forProvider
+            type: object
+          status:
+            description: |-
+              CertificateAuthorityStatus defines the observed state of a
+              CertificateAuthority.
+            properties:
+              atProvider:
+                description: CertificateAuthorityObservation keeps the observed state.
+                properties:
+                  createdAt:
+                    type: string
+                  externalIdClaim:
+                    description: |-
+                      ExternalIDClaim defines where in a client certificate the external ID of
+                      an identity is found.
+                    properties:
+                      index:
+                        description: Index of the external ID to use among the ones
+                          found, starting at zero.
+                        format: int64
+                        minimum: 0
+                        type: integer
+                      location:
+                        default: COMMON_NAME
+                        description: |-
+                          Location of the values in the certificate: its common name, or the
+                          URIs or email addresses of its subject alternative names.
+                        enum:
+                        - COMMON_NAME
+                        - SAN_URI
+                        - SAN_EMAIL
+                        type: string
+                      matcher:
+                        default: ALL
+                        description: |-
+                          Matcher selects the values to consider: ALL of them, those with a
+                          PREFIX or a SUFFIX, or the URIs with a SCHEME.
+                        enum:
+                        - ALL
+                        - PREFIX
+                        - SUFFIX
+                        - SCHEME
+                        type: string
+                      matcherCriteria:
+                        description: MatcherCriteria is the prefix, suffix or scheme
+                          the matcher looks for.
+                        type: string
+                      parser:
+                        default: NONE
+                        description: |-
+                          Parser turns a selected value into external IDs: NONE takes it as is,
+                          SPLIT splits it at a separator.
+                        enum:
+                        - NONE
+                        - SPLIT
+                        type: string
+                      parserCriteria:
+                        description: ParserCriteria is the separator of the SPLIT
+                          parser.
+                        type: string
+                    type: object
+                    x-kubernetes-validations:
+                    - message: the SCHEME matcher is for the SAN_URI location, which
+                        takes no PREFIX or SUFFIX matcher
+                      rule: 'self.location == ''SAN_URI'' ? self.matcher in [''ALL'',
+                        ''SCHEME''] : self.matcher != ''SCHEME'''
+                    - message: matcherCriteria is required unless the matcher is ALL
+                      rule: self.matcher == 'ALL' || (has(self.matcherCriteria) &&
+                        size(self.matcherCriteria) > 0)
+                    - message: parserCriteria is required for the SPLIT parser
+                      rule: self.parser == 'NONE' || (has(self.parserCriteria) &&
+                        size(self.parserCriteria) > 0)
+                  fingerprint:
+                    description: Fingerprint is the SHA-1 fingerprint of the certificate.
+                    type: string
+                  id:
+                    type: string
+                  identityNameFormat:
+                    type: string
+                  identityRoles:
+                    items:
+                      type: string
+                    type: array
+                  isAuthEnabled:
+                    type: boolean
+                  isAutoCaEnrollmentEnabled:
+                    type: boolean
+                  isOttCaEnrollmentEnabled:
+                    type: boolean
+                  isVerified:
+                    description: |-
+                      IsVerified is true once someone has proven to Ziti that they hold the
+                      private key of the certificate authority. Only then does Ziti accept
+                      its certificates for authentication and automatic enrollment.
+                    type: boolean
+                  name:
+                    type: string
+                  tags:
+                    additionalProperties:
+                      type: string
+                    type: object
+                  updatedAt:
+                    type: string
+                  verificationToken:
+                    description: |-
+                      VerificationToken is the common name of the certificate that proves it:
+                      a certificate with this common name, signed by the certificate
+                      authority, is posted to the verify endpoint of the Ziti API.
+                    type: string
+                type: object
+              conditions:
+                description: Conditions of the resource.
+                items:
+                  description: A Condition that may apply to a resource.
+                  properties:
+                    lastTransitionTime:
+                      description: |-
+                        LastTransitionTime is the last time this condition transitioned from one
+                        status to another.
+                      format: date-time
+                      type: string
+                    message:
+                      description: |-
+                        A Message containing details about this condition's last transition from
+                        one status to another, if any.
+                      type: string
+                    observedGeneration:
+                      description: |-
+                        ObservedGeneration represents the .metadata.generation that the condition was set based upon.
+                        For instance, if .metadata.generation is currently 12, but the .status.conditions[x].observedGeneration is 9, the condition is out of date
+                        with respect to the current state of the instance.
+                      format: int64
+                      type: integer
+                    reason:
+                      description: A Reason for this condition's last transition from
+                        one status to another.
+                      type: string
+                    status:
+                      description: Status of this condition; is it currently True,
+                        False, or Unknown?
+                      type: string
+                    type:
+                      description: |-
+                        Type of this condition. At most one of each condition type may apply to
+                        a resource at any point in time.
+                      type: string
+                  required:
+                  - lastTransitionTime
+                  - reason
+                  - status
+                  - type
+                  type: object
+                type: array
+                x-kubernetes-list-map-keys:
+                - type
+                x-kubernetes-list-type: map
+              lastHandledReconcileAt:
+                description: |-
+                  LastHandledReconcileAt holds the value of the most recent
+                  reconcile-requested-at annotation token that the controller has
+                  processed. Users can compare this to the annotation to determine
+                  whether a reconcile request has been handled.
+                type: string
+              observedGeneration:
+                description: |-
+                  ObservedGeneration is the latest metadata.generation
+                  which resulted in either a ready state, or stalled due to error
+                  it can not recover from without human intervention.
+                format: int64
+                type: integer
+            type: object
+        required:
+        - spec
+        type: object
+    served: true
+    storage: true
+    subresources:
+      status: {}
