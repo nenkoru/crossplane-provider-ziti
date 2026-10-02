@@ -1,0 +1,35 @@
+# Who may dial and who may host the service of examples/service/service.yaml.
+# Roles are "#attribute", "#all" or "@name". Names are resolved to Ziti IDs.
+apiVersion: ziti.crossplane.io/v1alpha1
+kind: ServicePolicy
+metadata:
+  name: web-service-dial
+spec:
+  providerConfigRef:
+    kind: ProviderConfig
+    name: default
+  forProvider:
+    name: web-service-dial
+    type: Dial
+    semantic: AnyOf
+    serviceRoles:
+      - "@web-service"
+    identityRoles:
+      - "#web-clients"
+---
+apiVersion: ziti.crossplane.io/v1alpha1
+kind: ServicePolicy
+metadata:
+  name: web-service-bind
+spec:
+  providerConfigRef:
+    kind: ProviderConfig
+    name: default
+  forProvider:
+    name: web-service-bind
+    type: Bind
+    semantic: AnyOf
+    serviceRoles:
+      - "#role:web"
+    identityRoles:
+      - "@web-server"

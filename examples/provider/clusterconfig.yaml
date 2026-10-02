@@ -1,0 +1,13 @@
+# A ClusterProviderConfig can be used by managed resources of any namespace.
+# It must name the namespace of its credentials Secret.
+apiVersion: ziti.crossplane.io/v1alpha1
+kind: ClusterProviderConfig
+metadata:
+  name: default
+spec:
+  host: https://controller.example.com:1280
+  credentials:
+    source: Secret
+    secretRef:
+      name: ziti-credentials
+      namespace: crossplane-system

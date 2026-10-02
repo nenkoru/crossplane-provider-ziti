@@ -104,8 +104,6 @@ spec:
       identity: my-dial-identity
     # Source IP to use for outbound connections
     sourceIp: 10.0.0.1
-    # Optional: match domain strategy (exact, prefix, suffix)
-    # matchDomainStrategy: exact
   managementPolicies:
     - "*"
 ---

@@ -1,0 +1,19 @@
+apiVersion: ziti.crossplane.io/v1alpha1
+kind: PostureCheckOS
+metadata:
+  name: supported-os
+spec:
+  providerConfigRef:
+    kind: ProviderConfig
+    name: default
+  forProvider:
+    name: supported-os
+    operatingSystems:
+      - type: Linux
+        versions:
+          - ">=5.0.0"
+      - type: macOS
+        versions:
+          - ">=13.0.0"
+    roleAttributes:
+      - managed-devices
