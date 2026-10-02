@@ -61,6 +61,13 @@ test-integration: $(KIND) $(KUBECTL) $(CROSSPLANE_CLI) $(HELM3)
 	@KIND_NODE_IMAGE_TAG=${KIND_NODE_IMAGE_TAG} $(ROOT_DIR)/cluster/local/integration_tests.sh || $(FAIL)
 	@$(OK) integration tests passed
 
+# Run the end-to-end test: the provider out-of-cluster against a kind cluster
+# and an OpenZiti controller started from ziti-docker-compose.yml.
+e2e.ziti:
+	@$(INFO) running end-to-end tests against OpenZiti
+	@$(ROOT_DIR)/test/e2e/e2e.sh all || $(FAIL)
+	@$(OK) end-to-end tests passed
+
 # Update the submodules, such as the common build scripts.
 submodules:
 	@git submodule sync
@@ -104,7 +111,7 @@ dev-clean: $(KIND) $(KUBECTL)
 	@$(INFO) Deleting kind cluster
 	@$(KIND) delete cluster --name=$(PROJECT_NAME)-dev
 
-.PHONY: submodules fallthrough test-integration run dev dev-clean
+.PHONY: submodules fallthrough test-integration e2e.ziti run dev dev-clean
 
 # ====================================================================================
 # Special Targets
