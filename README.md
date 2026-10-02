@@ -25,9 +25,9 @@ namespaced, and a cluster-scoped `ClusterProviderConfig` is available.
 | `EdgeRouter` | edge router | yes | yes | yes | yes | extended |
 | `EdgeRouterPolicy` | edge router policy | yes | yes | yes | yes | extended |
 | `ServiceEdgeRouterPolicy` | service edge router policy | yes | yes | yes | yes | extended |
-| `PostureCheckOS` | posture check of type OS | yes | partial | yes | yes | extended |
-| `PostureCheckMFA` | posture check of type MFA | yes | partial | yes | yes | extended |
-| `AuthPolicy` | auth policy | partial | partial | yes | yes | extended |
+| `PostureCheckOS` | posture check of type OS | yes | yes | yes | yes | extended |
+| `PostureCheckMFA` | posture check of type MFA | yes | yes | yes | yes | extended |
+| `AuthPolicy` | auth policy | yes | yes | yes | yes | extended |
 | `ConfigHostV2` | config of type `host.v2` | no | no | no | no | no |
 | `IdentityCA` | identity, CA enrollment | no | no | no | no | no |
 | `IdentityUPDB` | identity, password enrollment | no | no | no | no | no |
@@ -42,16 +42,14 @@ namespaced, and a cluster-scoped `ClusterProviderConfig` is available.
 How to read the table:
 
 - **Controller: yes** means all fields of the kind are created, updated and
-  checked for drift. **partial** means the kind reconciles the fields it has,
-  but does not cover the Ziti API yet: the posture checks lack some settings
-  (for example `promptOnWake`), and `AuthPolicy` does not expose every field
-  of a Ziti auth policy (for example the secondary factors).
+  checked for drift.
 - **Unit test** runs the kind through create, update and delete against an
   in-memory fake of the Ziti API.
 - **End-to-end test** says which stage of [`test/e2e/e2e.sh`](test/e2e/e2e.sh)
-  covers the kind against a real OpenZiti controller. The suite has not run in
-  CI yet, so **no kind is verified against a live controller at the moment**;
-  the fake follows the documented API and has not been compared with one.
+  covers the kind against a real OpenZiti controller: the entity is created
+  as declared, follows a spec change, is not touched without one, and is
+  deleted with its managed resource. All eleven kinds pass against OpenZiti
+  2.0.6 (last run on 2026-10-02).
 
 ## How it behaves
 
@@ -72,6 +70,10 @@ How to read the table:
   Secret keeps the last one. An expired token is not renewed yet.
 - **Deletion.** Deleting a managed resource deletes the Ziti entity. Set
   `spec.managementPolicies` to keep it.
+- **Updates.** Entities are updated with `PATCH`, so settings the provider
+  does not manage are left alone. `Service` and `AuthPolicy` are replaced
+  with `PUT` instead: a `PATCH` of a service ignores `encryptionRequired`, and
+  a `PATCH` of an auth policy ignores some password settings.
 
 ## Running the provider
 
@@ -228,16 +230,23 @@ The end-to-end test starts an OpenZiti controller from
 `ziti-docker-compose.yml` and a kind cluster, runs the provider
 out-of-cluster, applies the examples and checks the result through the Ziti
 API: the entities exist as declared, follow spec changes, are restored after
-being changed in Ziti directly, and are deleted with their managed resources.
+being changed in Ziti directly, are not updated without a spec change, and
+are deleted with their managed resources.
+
+`test/e2e/e2e.sh test` runs only the checks, against a provider that is
+already running: point `KUBECONFIG` at the cluster with the CRDs through
+`E2E_WORK_DIR` (the script reads `$E2E_WORK_DIR/kubeconfig`) and set
+`ZITI_URL`, `ZITI_USER` and `ZITI_PWD` for the test controller. Never point
+it at a Ziti network you care about: it creates, changes and deletes
+entities.
 
 ## Roadmap
 
-1. Run the end-to-end suite in CI and fix what a live controller reveals.
-2. Complete `AuthPolicy` and the posture checks.
-3. Add the missing kinds, starting with `ConfigHostV2` and the other identity
+1. Run the end-to-end suite in CI on every pull request.
+2. Add the missing kinds, starting with `ConfigHostV2` and the other identity
    enrollments.
-4. Renew expired enrollment tokens.
-5. Package and install the provider through Crossplane in the end-to-end test,
+3. Renew expired enrollment tokens.
+4. Package and install the provider through Crossplane in the end-to-end test,
    then publish a first release.
 
 ## License

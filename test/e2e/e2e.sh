@@ -14,6 +14,10 @@
 #   test/e2e/e2e.sh down    # stop everything "up" started
 #   test/e2e/e2e.sh all     # up, test, down
 #
+# "test" alone runs the checks against a provider that is already running:
+# put the kubeconfig of its cluster in $E2E_WORK_DIR/kubeconfig and set
+# ZITI_URL, ZITI_USER and ZITI_PWD for the test controller.
+#
 # Requires docker (with compose), kind, kubectl, go, curl and jq.
 
 set -euo pipefail
@@ -34,6 +38,9 @@ ZITI_API="${ZITI_URL}/edge/management/v1"
 TIMEOUT="${E2E_TIMEOUT:-180}"
 # How often the provider checks for drift.
 POLL="${E2E_POLL:-10s}"
+# How long entities must stay untouched to prove the provider does not update
+# them without a reason, in seconds. Must span several polls.
+SETTLE="${E2E_SETTLE:-35}"
 
 GROUP="ziti.crossplane.io"
 
@@ -131,6 +138,11 @@ entity_matches() {
 	ziti_get "$1" "$2" | jq -e "$3"
 }
 
+# patch <plural> <name> <json merge patch of spec.forProvider> changes the spec.
+patch() {
+	kubectl patch "$1.${GROUP}" "$2" --type merge -p "{\"spec\": {\"forProvider\": $3}}" >/dev/null
+}
+
 # mr_id <plural> <name> prints the Ziti ID recorded in the managed resource.
 mr_id() {
 	kubectl get "$1.${GROUP}" "$2" -o jsonpath='{.status.atProvider.id}'
@@ -171,6 +183,32 @@ check_token() {
 	*.*.*) ok "secret/${secret}: enrollment token is a JWT" ;;
 	*) fail "secret/${secret}: enrollment token is not a JWT" ;;
 	esac
+}
+
+# stamps <collection> <id>... prints the last update time of each entity.
+stamps() {
+	local collection="$1" id
+	shift
+	for id in "$@"; do
+		printf '%s/%s %s\n' "${collection}" "${id}" "$(ziti_get "${collection}" "${id}" | jq -r '.updatedAt')"
+	done
+}
+
+# expect_settled <description> <command printing stamps> checks that no entity
+# is updated while the provider keeps polling: an update without a spec change
+# means the provider sees a difference that is not there.
+expect_settled() {
+	local description="$1" before after
+	shift
+	before="$("$@")" || fail "${description}: cannot query Ziti"
+	sleep "${SETTLE}"
+	after="$("$@")" || fail "${description}: cannot query Ziti"
+	if [ "${before}" = "${after}" ]; then
+		ok "${description}"
+	else
+		diff <(echo "${before}") <(echo "${after}") >&2 || true
+		fail "${description}: entities were updated within ${SETTLE}s without a spec change"
+	fi
 }
 
 apply() {
@@ -282,18 +320,37 @@ EOF
 	check_token web-server-enrollment identities "${server}" '.enrollment.ott.jwt'
 
 	step "Updating a managed resource updates Ziti"
-	kubectl patch "services.${GROUP}" web-service --type merge \
-		-p '{"spec": {"forProvider": {"roleAttributes": ["role:web", "role:e2e"], "terminatorStrategy": "weighted", "tags": {"env": "e2e", "team": null}}}}'
+	patch services web-service \
+		'{"roleAttributes": ["role:web", "role:e2e"], "encryptionRequired": false, "terminatorStrategy": "weighted", "maxIdleTimeMillis": 30000, "tags": {"env": "e2e", "team": null}}'
 	eventually "service is updated in Ziti" entity_matches services "${service}" \
-		'(.roleAttributes | sort) == ["role:e2e", "role:web"] and .terminatorStrategy == "weighted" and .tags == {"env": "e2e"}'
-	kubectl patch "confighostv1s.${GROUP}" web-service-host --type merge -p '{"spec": {"forProvider": {"port": 8443}}}'
-	eventually "host config is updated in Ziti" entity_matches configs "${host}" '.data.port == 8443'
+		'(.roleAttributes | sort) == ["role:e2e", "role:web"] and .encryptionRequired == false and .terminatorStrategy == "weighted" and .maxIdleTimeMillis == 30000 and .tags == {"env": "e2e"}'
 	expect "service keeps its Ziti ID" "$(mr_id services web-service)" "${service}"
+	patch confighostv1s web-service-host '{"port": 8443, "listenOptions": {"precedence": "default"}}'
+	eventually "host config is updated in Ziti" entity_matches configs "${host}" \
+		'.data.port == 8443 and .data.listenOptions.precedence == "default"'
+	patch configinterceptv1s web-service-intercept '{"addresses": ["web.example.com"], "dialOptions": null}'
+	eventually "intercept config is updated in Ziti" entity_matches configs "${intercept}" \
+		'.data.addresses == ["web.example.com"] and (.data | has("dialOptions") | not)'
+	patch identities web-server '{"roleAttributes": ["web-servers", "e2e"], "tags": {"env": "e2e"}}'
+	eventually "identity is updated in Ziti" entity_matches identities "${server}" \
+		'(.roleAttributes | sort) == ["e2e", "web-servers"] and .tags == {"env": "e2e"}'
+	patch servicepolicies web-service-dial '{"semantic": "AllOf", "identityRoles": ["#web-clients", "@web-server"], "tags": {"env": "e2e"}}'
+	eventually "service policy is updated in Ziti" entity_matches service-policies "$(mr_id servicepolicies web-service-dial)" \
+		".semantic == \"AllOf\" and (.identityRoles | sort) == ([\"#web-clients\", \"@${server}\"] | sort) and .tags == {\"env\": \"e2e\"}"
 
 	step "Changes made in Ziti behind the provider's back are reverted"
 	ziti_patch identities "${client}" '{"roleAttributes": ["tampered"]}'
 	entity_matches identities "${client}" '.roleAttributes == ["tampered"]' >/dev/null || fail "could not tamper with the identity"
 	eventually "identity role attributes are restored" entity_matches identities "${client}" '.roleAttributes == ["web-clients"]'
+
+	step "Nothing is updated without a spec change"
+	core_stamps() {
+		stamps configs "${host}" "${intercept}"
+		stamps services "${service}"
+		stamps identities "${client}" "${server}"
+		stamps service-policies "$(mr_id servicepolicies web-service-dial)" "$(mr_id servicepolicies web-service-bind)"
+	}
+	expect_settled "core entities stay untouched" core_stamps
 
 	step "Deleting the managed resources deletes the Ziti entities"
 	delete "${CORE_EXAMPLES[@]}"
@@ -319,8 +376,40 @@ test_extended() {
 	check_entity serviceedgerouterpolicies web-services-public-routers service-edge-router-policies \
 		'.semantic == "AnyOf" and .serviceRoles == ["#role:web"] and .edgeRouterRoles == ["#public"]'
 	check_entity posturecheckoses supported-os posture-checks '.typeId == "OS" and (.operatingSystems | length) == 2'
-	check_entity posturecheckmfas mfa posture-checks '.typeId == "MFA" and .timeoutSeconds == 3600'
-	check_entity authpolicies certificates-only auth-policies '.primary.cert.allowed == true and .primary.updb.allowed == false'
+	check_entity posturecheckmfas mfa posture-checks '.typeId == "MFA" and .timeoutSeconds == 3600 and .promptOnWake == true and .promptOnUnlock == true'
+	check_entity authpolicies certificates-and-totp auth-policies \
+		'.primary.cert.allowed == true and .primary.updb.allowed == false and .primary.extJwt.allowed == false and .secondary.requireTotp == true and .tags.team == "platform"'
+
+	step "Updating the remaining kinds updates Ziti"
+	patch edgerouters public-router '{"cost": 10, "noTraversal": true, "isTunnelerEnabled": true, "roleAttributes": ["public", "e2e"]}'
+	eventually "edge router is updated in Ziti" entity_matches edge-routers "$(mr_id edgerouters public-router)" \
+		'.cost == 10 and .noTraversal == true and .isTunnelerEnabled == true and (.roleAttributes | sort) == ["e2e", "public"]'
+	patch edgerouterpolicies web-clients-public-routers '{"semantic": "AllOf", "identityRoles": ["#web-clients"]}'
+	eventually "edge router policy is updated in Ziti" entity_matches edge-router-policies "$(mr_id edgerouterpolicies web-clients-public-routers)" \
+		'.semantic == "AllOf" and .identityRoles == ["#web-clients"]'
+	patch serviceedgerouterpolicies web-services-public-routers '{"edgeRouterRoles": ["#all"], "tags": {"env": "e2e"}}'
+	eventually "service edge router policy is updated in Ziti" entity_matches service-edge-router-policies "$(mr_id serviceedgerouterpolicies web-services-public-routers)" \
+		'.edgeRouterRoles == ["#all"] and .tags == {"env": "e2e"}'
+	patch posturecheckoses supported-os '{"operatingSystems": [{"type": "Linux", "versions": [">=6.0.0"]}], "roleAttributes": ["managed-devices", "e2e"]}'
+	eventually "OS posture check is updated in Ziti" entity_matches posture-checks "$(mr_id posturecheckoses supported-os)" \
+		'(.operatingSystems | length) == 1 and .operatingSystems[0].versions == [">=6.0.0"] and (.roleAttributes | sort) == ["e2e", "managed-devices"]'
+	patch posturecheckmfas mfa '{"timeoutSeconds": 600, "promptOnWake": false, "ignoreLegacyEndpoints": true}'
+	eventually "MFA posture check is updated in Ziti" entity_matches posture-checks "$(mr_id posturecheckmfas mfa)" \
+		'.timeoutSeconds == 600 and (.promptOnWake // false) == false and .promptOnUnlock == true and .ignoreLegacyEndpoints == true'
+	patch authpolicies certificates-and-totp \
+		'{"primary": {"cert": {"allowExpiredCerts": true}, "updb": {"allowed": true, "minPasswordLength": 12, "requireNumberChar": true}}, "secondary": {"requireTotp": false}}'
+	eventually "auth policy is updated in Ziti" entity_matches auth-policies "$(mr_id authpolicies certificates-and-totp)" \
+		'.primary.cert.allowExpiredCerts == true and .primary.updb.allowed == true and .primary.updb.minPasswordLength == 12 and .primary.updb.requireNumberChar == true and (.secondary.requireTotp // false) == false'
+
+	step "Nothing is updated without a spec change"
+	extended_stamps() {
+		stamps edge-routers "$(mr_id edgerouters public-router)"
+		stamps edge-router-policies "$(mr_id edgerouterpolicies web-clients-public-routers)"
+		stamps service-edge-router-policies "$(mr_id serviceedgerouterpolicies web-services-public-routers)"
+		stamps posture-checks "$(mr_id posturecheckoses supported-os)" "$(mr_id posturecheckmfas mfa)"
+		stamps auth-policies "$(mr_id authpolicies certificates-and-totp)"
+	}
+	expect_settled "remaining entities stay untouched" extended_stamps
 
 	step "Deleting the remaining kinds"
 	delete "${EXTENDED_EXAMPLES[@]}"
@@ -329,7 +418,7 @@ test_extended() {
 	expect_gone "service edge router policy is gone" service-edge-router-policies web-services-public-routers
 	expect_gone "OS posture check is gone" posture-checks supported-os
 	expect_gone "MFA posture check is gone" posture-checks mfa
-	expect_gone "auth policy is gone" auth-policies certificates-only
+	expect_gone "auth policy is gone" auth-policies certificates-and-totp
 }
 
 run_tests() {
@@ -374,7 +463,7 @@ all)
 	run_tests
 	;;
 *)
-	sed -n '2,17p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
+	sed -n '2,21p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
 	exit 2
 	;;
 esac
