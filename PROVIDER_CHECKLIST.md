@@ -1,5 +1,10 @@
 # Provider Checklist
 
+> Status of this repository as of 2026-10-02. Checked items are done. Open
+> items: there is no published package, so there are no install instructions,
+> no OCI repositories and nothing is pushed from CI; the release workflows of
+> the template are parked in `.github/workflows-disabled`.
+
 Crossplane manages Resources external via
 [Providers](https://crossplane.io/docs/master/concepts/providers.html).
 Providers are composed of Kubernetes [Custom Resource
@@ -30,36 +35,36 @@ Generally projects are named `provider-<name>`, with `name` being the API being
 managed. Example project names are `provider-aws`, `provider-kubernetes`,
 and `provider-github`.
 
-The [provider-openziti](https://github.com/crossplane/provider-openziti) repository can be
+The [provider-template](https://github.com/crossplane/provider-template) repository can be
 used as a starting point for new providers. For [terrajet](https://github.com/crossplane/terrajet)-based providers, the
-[provider-jet-openziti](https://github.com/crossplane-contrib/provider-jet-openziti) is
+[provider-jet-template](https://github.com/crossplane-contrib/provider-jet-template) is
 available.
 
 ## Files
 
 Most Crossplane providers include the following files:
 
-- [ ]  A descriptive README.md at the root of the project (see
+- [x]  A descriptive README.md at the root of the project (see
   [provider-gcp/README.md](https://github.com/crossplane/provider-gcp/blob/master/README.md)
   as an example)
-- [ ]  Code is licensed under the [Apache 2.0
-  License](https://github.com/crossplane/provider-openziti/blob/main/LICENSE)
-- [ ]  Include a “Developer Certificate of Origin”. Example:
+- [x]  Code is licensed under the [Apache 2.0
+  License](https://github.com/crossplane/provider-template/blob/main/LICENSE)
+- [x]  Include a “Developer Certificate of Origin”. Example:
   [DCO](https://github.com/upbound/build/blob/master/DCO)
-- [ ]  Include the CNCF [Code of
+- [x]  Include the CNCF [Code of
   Conduct](https://github.com/crossplane/crossplane/blob/master/CODE_OF_CONDUCT.md)
-- [ ]  Update
-  [OWNERS.md](https://github.com/crossplane/provider-openziti/blob/main/OWNERS.md)
+- [x]  Update
+  [OWNERS.md](https://github.com/crossplane/provider-template/blob/main/OWNERS.md)
   with contacts for project Owners
-- [ ]  Ensure `hack/boilerplate.go.txt` (used in Code generation) includes
+- [x]  Ensure `hack/boilerplate.go.txt` (used in Code generation) includes
   Crossplane Authors, Apache license and any other Copyright statements:
-  [https://github.com/crossplane/provider-openziti/blob/main/hack/boilerplate.go.txt](https://github.com/crossplane/provider-openziti/blob/main/hack/boilerplate.go.txt)
+  [https://github.com/crossplane/provider-template/blob/main/hack/boilerplate.go.txt](https://github.com/crossplane/provider-template/blob/main/hack/boilerplate.go.txt)
 - [ ] Include Documentation on how to:
   - [ ] Install Provider
-  - [ ] Contribute to Development
-  - [ ] Authenticate to backend API, including creating Kubernetes secrets for
+  - [x] Contribute to Development
+  - [x] Authenticate to backend API, including creating Kubernetes secrets for
     the ProviderConfig
-- [ ] Include examples for the ProviderConfig and each resource in the
+- [x] Include examples for the ProviderConfig and each resource in the
   `examples/` directory.
 
 ## Build Process
@@ -68,20 +73,20 @@ There are a number of build tools and processes that are common across the
 Crossplane ecosystem. Using these ensures a consistent development environment
 across projects.
 
-The [provider-openziti](https://github.com/crossplane/provider-openziti)
+The [provider-template](https://github.com/crossplane/provider-template)
 repository contains most of these settings.
 
-- [ ] Use the [Upbound build](https://github.com/upbound/build) submodule. (see
+- [x] Use the [Upbound build](https://github.com/upbound/build) submodule. (see
   [https://github.com/crossplane/crossplane/blob/master/CONTRIBUTING.md#establishing-a-development-environment](https://github.com/crossplane/crossplane/blob/master/CONTRIBUTING.md#establishing-a-development-environment))
-- [ ] Include a
+- [x] Include a
   [Makefile](https://github.com/crossplane/provider-gcp/blob/master/Makefile)
   that supports common build targets.
-- [ ] Use a Golang linter. Example:
+- [x] Use a Golang linter. Example:
   [https://github.com/crossplane/provider-aws/blob/master/.golangci.yml](https://github.com/crossplane/provider-aws/blob/master/.golangci.yml)
-- [ ] Create a [Crossplane
+- [x] Create a [Crossplane
   Package](https://crossplane.io/docs/master/concepts/packages.html)
   configuration (see
-  [package/crossplane.yaml)](https://github.com/crossplane/provider-openziti/blob/main/package/crossplane.yaml)
+  [package/crossplane.yaml)](https://github.com/crossplane/provider-template/blob/main/package/crossplane.yaml)
 
 ## Deployment of Artifacts
 
@@ -95,8 +100,8 @@ the publish and promotion workflows.
 
 In general, providers should:
 
-- [ ] Utilize GitHub workflows from
-  <https://github.com/crossplane/provider-openziti/tree/main/.github/workflows>
+- [x] Utilize GitHub workflows from
+  <https://github.com/crossplane/provider-template/tree/main/.github/workflows>
 - [ ] Create OCI image repos to push Package and Controller images.
 - [ ] Automatically push Provider images and packages via CI
 - [ ] Add GitHub Secrets to push to Docker repository. (To be performed by
@@ -112,7 +117,7 @@ to grant your project access to the GitHub org scoped secrets.
 
 - [ ] Follow recommendations at
   [https://github.com/crossplane/crossplane/blob/master/GOVERNANCE.md#repository-governance](https://github.com/crossplane/crossplane/blob/master/GOVERNANCE.md#repository-governance)
-- [ ] Enable Issues on your project and configure Issue openzitis (examples at:
-  [.github/ISSUE_TEMPLATE](https://github.com/crossplane/provider-openziti/tree/master/.github/ISSUE_TEMPLATE))
-- [ ] Create Pull Request OpenZitis: (example:
-  [PULL_REQUEST_TEMPLATE.md](https://github.com/crossplane/provider-openziti/blob/master/.github/PULL_REQUEST_TEMPLATE.md))
+- [x] Enable Issues on your project and configure Issue templates (examples at:
+  [.github/ISSUE_TEMPLATE](https://github.com/crossplane/provider-template/tree/master/.github/ISSUE_TEMPLATE))
+- [x] Create Pull Request Templates: (example:
+  [PULL_REQUEST_TEMPLATE.md](https://github.com/crossplane/provider-template/blob/master/.github/PULL_REQUEST_TEMPLATE.md))

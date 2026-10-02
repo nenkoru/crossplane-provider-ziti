@@ -1,125 +1,41 @@
-# Ziti Provider Examples
+# Examples
 
-This directory contains example manifests for using the Crossplane Ziti provider.
+One directory per kind. Every manifest is validated against the CRD of its
+kind by `go test ./apis/...`.
 
-## Directory Structure
+| Path | What it shows |
+|------|---------------|
+| `provider/config.yaml` | A `ProviderConfig` with credentials in a Secret. |
+| `provider/clusterconfig.yaml` | A `ClusterProviderConfig` for all namespaces. |
+| `service/minimal.yaml` | A service with a host config. |
+| `service/service.yaml` | A service with a host and an intercept config. |
+| `service/advanced.yaml` | Every setting of the host and intercept configs. |
+| `service/ha.yaml` | A service with the `ha` terminator strategy. |
+| `identity/identity.yaml` | Identities whose enrollment token is written to a Secret. |
+| `servicepolicy/servicepolicy.yaml` | Who may dial and who may host the service of `service/service.yaml`. |
+| `edgerouter/edgerouter.yaml` | An edge router whose enrollment token is written to a Secret. |
+| `edgerouterpolicy/edgerouterpolicy.yaml` | Which identities may use which edge routers. |
+| `serviceedgerouterpolicy/serviceedgerouterpolicy.yaml` | Which services are available on which edge routers. |
+| `posturecheck/os.yaml`, `posturecheck/mfa.yaml` | Posture checks. |
+| `authpolicy/authpolicy.yaml` | An auth policy. |
 
-```
-examples/
-├── provider/
-│   └── config.yaml          # ProviderConfig examples
-└── service/
-    ├── minimal.yaml         # Minimal service with host config
-    ├── service.yaml         # Standard service with host + intercept configs
-    └── advanced.yaml        # Full-featured service with all options
-```
+## Trying them
 
-## Quick Start
+Edit `provider/config.yaml` to point at your Ziti controller, then:
 
-### 1. Apply ProviderConfig
-
-```bash
+```shell
 kubectl apply -f examples/provider/config.yaml
+kubectl apply -f examples/service/service.yaml -f examples/identity/identity.yaml -f examples/servicepolicy/servicepolicy.yaml
+kubectl get managed
 ```
 
-### 2. Apply Service Examples
+`service.yaml`, `identity.yaml` and `servicepolicy.yaml` belong together: the
+policies refer to the service and the identities by name. The order in which
+they are applied does not matter; a resource that refers to something that
+does not exist yet is retried.
 
-#### Minimal Service (host config only)
+The enrollment token of an identity is in its connection secret:
 
-```bash
-kubectl apply -f examples/service/minimal.yaml
+```shell
+kubectl get secret web-client-enrollment -o jsonpath='{.data.enrollmentToken}' | base64 -d > web-client.jwt
 ```
-
-#### Standard Service (host + intercept configs)
-
-```bash
-kubectl apply -f examples/service/service.yaml
-```
-
-#### Advanced Service (all features)
-
-```bash
-kubectl apply -f examples/service/advanced.yaml
-```
-
-## Resource Reference
-
-### ConfigHostV1
-
-Defines how a service is hosted (terminator configuration).
-
-Key fields:
-
-- `address`: Target host address
-- `port`: Target port
-- `protocol`: tcp/udp
-- `forwardProtocol/forwardPort/forwardAddress`: Forward intercepted values
-- `allowedProtocols/allowedAddresses/allowedSourceAddresses`: Filtering
-- `forwardAddressTranslations`: NAT translations
-- `allowedPortRanges`: Port ranges to allow
-- `listenOptions`: Terminator listen options (cost, max connections, etc.)
-- `proxy`: Outbound proxy configuration
-- `httpChecks`: HTTP health checks
-- `portChecks`: Port health checks
-
-### ConfigInterceptV1
-
-Defines how client traffic is intercepted.
-
-Key fields:
-
-- `addresses`: Domain addresses to intercept
-- `protocols`: Protocols to intercept (tcp/udp)
-- `portRanges`: Port ranges to intercept
-- `dialOptions`: Connection dial options (timeout, identity)
-- `sourceIp`: Source IP for outbound connections
-- `matchDomainStrategy`: Domain matching strategy
-
-### Service
-
-Defines a Ziti service with associated configs.
-
-Key fields:
-
-- `name`: Service name
-- `encryptionRequired`: Require encryption (default: true)
-- `maxIdleTimeMillis`: Max idle time in milliseconds
-- `terminatorStrategy`: smartrouting/weighted/random/ha
-- `configs`: List of config names (host or intercept)
-- `roleAttributes`: Role attributes for policy
-- `tags`: Metadata tags
-
-## ProviderConfig
-
-The ProviderConfig specifies how to connect to the Ziti controller:
-
-```yaml
-apiVersion: ziti.crossplane.io/v1alpha1
-kind: ProviderConfig
-metadata:
-  name: default
-spec:
-  host: https://ziti-controller:1280
-  username: admin
-  password: admin
-  # OR use certificate auth:
-  # cert: |
-  #   -----BEGIN CERTIFICATE-----
-  #   ...
-  #   -----END CERTIFICATE-----
-  # key: |
-  #   -----BEGIN PRIVATE KEY-----
-  #   ...
-  #   -----END PRIVATE KEY-----
-  # ca: |
-  #   -----BEGIN CERTIFICATE-----
-  #   ...
-  #   -----END CERTIFICATE-----
-```
-
-## Notes
-
-- Config names in Service `configs` array are resolved to Ziti config IDs automatically
-- Both ConfigHostV1 and ConfigInterceptV1 configs can be mixed in a Service
-- All resources support `managementPolicies` for granular control (Observe, Create, Update, Delete, LateInitialize)
-- The provider handles drift detection and reconciliation automatically
