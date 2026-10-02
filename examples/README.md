@@ -22,6 +22,7 @@ kind by `go test ./apis/...`.
 | `serviceedgerouterpolicy/serviceedgerouterpolicy.yaml` | Which services are available on which edge routers. |
 | `posturecheck/os.yaml`, `posturecheck/mfa.yaml` | Posture checks. |
 | `authpolicy/authpolicy.yaml` | An auth policy. |
+| `authpolicy/jwt.yaml` | An auth policy that accepts the tokens of one external JWT signer, by name. |
 | `certificateauthority/certificateauthority.yaml` | A third-party certificate authority, for `identity/ca.yaml`. |
 | `externaljwtsigner/externaljwtsigner.yaml` | An OpenID Connect provider as an external JWT signer. |
 

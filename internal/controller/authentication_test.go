@@ -36,6 +36,7 @@ import (
 	"github.com/crossplane/provider-ziti/apis"
 	"github.com/crossplane/provider-ziti/apis/v1alpha1"
 	"github.com/crossplane/provider-ziti/internal/client/fake"
+	"github.com/crossplane/provider-ziti/internal/controller/authpolicy"
 	"github.com/crossplane/provider-ziti/internal/controller/certificateauthority"
 	"github.com/crossplane/provider-ziti/internal/controller/externaljwtsigner"
 	"github.com/crossplane/provider-ziti/internal/controller/generic"
@@ -270,6 +271,92 @@ func TestExternalJWTSignerGetsItsTagsAfterCreation(t *testing.T) {
 	}
 	if diff := cmp.Diff(map[string]string{"team": "sso"}, mg.Status.AtProvider.Tags); diff != "" {
 		t.Errorf("status.atProvider.tags: -want, +got:\n%s", diff)
+	}
+}
+
+func TestAuthPolicyRefersToSignersByName(t *testing.T) {
+	policy := func(extJWT, secondary map[string]any) map[string]any {
+		return map[string]any{
+			"name": "sso",
+			"primary": map[string]any{
+				"cert": map[string]any{"allowed": false, "allowExpiredCerts": false},
+				"updb": map[string]any{
+					"allowed": false, "minPasswordLength": float64(5), "maxAttempts": float64(5), "lockoutDurationMinutes": float64(0),
+					"requireMixedCase": false, "requireNumberChar": false, "requireSpecialChar": false,
+				},
+				"extJwt": extJWT,
+			},
+			"secondary": secondary,
+			"tags":      map[string]any{},
+		}
+	}
+
+	lifecycle[*v1alpha1.AuthPolicy]{
+		kind: authpolicy.Kind,
+		seed: func(srv *fake.Server) {
+			srv.Put("external-jwt-signers", map[string]any{"id": "sig-2", "name": "corporate-sso"})
+			srv.Put("external-jwt-signers", map[string]any{"id": "sig-1", "name": "partner-sso"})
+		},
+		mg: &v1alpha1.AuthPolicy{
+			ObjectMeta: meta1("sso"),
+			Spec: v1alpha1.AuthPolicySpec{ForProvider: v1alpha1.AuthPolicyParameters{
+				Name: "sso",
+				Primary: &v1alpha1.AuthMethods{ExtJWT: &v1alpha1.ExtJWTAuth{
+					Allowed: true,
+					// A name and an ID, in the order opposite to the one Ziti
+					// reports them in.
+					AllowedSigners: []string{"corporate-sso", "sig-1"},
+				}},
+				Secondary: &v1alpha1.SecondaryAuth{RequireExtJWTSigner: ptr.To("partner-sso")},
+			}},
+		},
+		created: policy(
+			map[string]any{"allowed": true, "allowedSigners": []any{"sig-1", "sig-2"}},
+			map[string]any{"requireTotp": false, "requireExtJwtSigner": "sig-1"},
+		),
+		update: func(mg *v1alpha1.AuthPolicy) {
+			mg.Spec.ForProvider.Primary.ExtJWT.AllowedSigners = []string{"corporate-sso"}
+			mg.Spec.ForProvider.Secondary = nil
+		},
+		updated: policy(
+			map[string]any{"allowed": true, "allowedSigners": []any{"sig-2"}},
+			map[string]any{"requireTotp": false, "requireExtJwtSigner": nil},
+		),
+	}.run(t)
+}
+
+func TestAuthPolicyWaitsForItsSigners(t *testing.T) {
+	cases := map[string]v1alpha1.AuthPolicyParameters{
+		"AllowedSigner": {
+			Name:    "sso",
+			Primary: &v1alpha1.AuthMethods{ExtJWT: &v1alpha1.ExtJWTAuth{Allowed: true, AllowedSigners: []string{"corporate-sso"}}},
+		},
+		"RequiredSigner": {
+			Name:      "sso",
+			Secondary: &v1alpha1.SecondaryAuth{RequireExtJWTSigner: ptr.To("corporate-sso")},
+		},
+	}
+
+	for name, parameters := range cases {
+		t.Run(name, func(t *testing.T) {
+			srv := fake.NewServer()
+			defer srv.Close()
+
+			api, err := srv.Client()
+			if err != nil {
+				t.Fatalf("cannot create client: %v", err)
+			}
+
+			mg := &v1alpha1.AuthPolicy{ObjectMeta: meta1("sso"), Spec: v1alpha1.AuthPolicySpec{ForProvider: parameters}}
+
+			_, err = generic.NewExternalClient(authpolicy.Kind, api).Create(context.Background(), mg)
+			if err == nil || !strings.Contains(err.Error(), `no entity named "corporate-sso" in external-jwt-signers`) {
+				t.Errorf("Create(...): want an error about the missing signer, got %v", err)
+			}
+			if got := srv.Len("auth-policies"); got != 0 {
+				t.Errorf("want no auth policy to be created, got %d", got)
+			}
+		})
 	}
 }
 
