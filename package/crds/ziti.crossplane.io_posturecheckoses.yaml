@@ -64,13 +64,19 @@ spec:
                     description: Name of the posture check.
                     type: string
                   operatingSystems:
-                    description: OperatingSystems to check.
+                    description: OperatingSystems that pass the check.
                     items:
                       description: OperatingSystem defines an OS posture check constraint.
                       properties:
                         type:
-                          description: Type of operating system (e.g., Windows, macOS,
-                            Linux).
+                          description: Type of operating system.
+                          enum:
+                          - Windows
+                          - WindowsServer
+                          - Android
+                          - iOS
+                          - Linux
+                          - macOS
                           type: string
                         versions:
                           description: Versions constraint (e.g., [">=10.0.0"]).
@@ -80,14 +86,21 @@ spec:
                       required:
                       - type
                       type: object
+                    minItems: 1
                     type: array
                   roleAttributes:
                     description: RoleAttributes for the posture check.
                     items:
                       type: string
                     type: array
+                  tags:
+                    additionalProperties:
+                      type: string
+                    description: Tags is a map of tags.
+                    type: object
                 required:
                 - name
+                - operatingSystems
                 type: object
               managementPolicies:
                 default:
@@ -164,8 +177,14 @@ spec:
                       description: OperatingSystem defines an OS posture check constraint.
                       properties:
                         type:
-                          description: Type of operating system (e.g., Windows, macOS,
-                            Linux).
+                          description: Type of operating system.
+                          enum:
+                          - Windows
+                          - WindowsServer
+                          - Android
+                          - iOS
+                          - Linux
+                          - macOS
                           type: string
                         versions:
                           description: Versions constraint (e.g., [">=10.0.0"]).
@@ -180,7 +199,11 @@ spec:
                     items:
                       type: string
                     type: array
-                  type:
+                  tags:
+                    additionalProperties:
+                      type: string
+                    type: object
+                  typeId:
                     type: string
                   updatedAt:
                     type: string

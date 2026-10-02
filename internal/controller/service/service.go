@@ -34,6 +34,8 @@ var Kind = generic.Kind[*v1alpha1.Service]{
 	List:       &v1alpha1.ServiceList{},
 	Collection: "services",
 	Desired:    desired,
+	// A PATCH of a service silently ignores encryptionRequired.
+	ReplaceOnUpdate: true,
 	Observe: func(mg *v1alpha1.Service, entity json.RawMessage) error {
 		return generic.Unmarshal(entity, &mg.Status.AtProvider)
 	},

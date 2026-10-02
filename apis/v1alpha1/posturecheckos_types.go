@@ -13,7 +13,8 @@ type PostureCheckOSSpec struct {
 
 // OperatingSystem defines an OS posture check constraint.
 type OperatingSystem struct {
-	// Type of operating system (e.g., Windows, macOS, Linux).
+	// Type of operating system.
+	// +kubebuilder:validation:Enum=Windows;WindowsServer;Android;iOS;Linux;macOS
 	Type string `json:"type"`
 	// Versions constraint (e.g., [">=10.0.0"]).
 	// +optional
@@ -24,11 +25,15 @@ type OperatingSystem struct {
 type PostureCheckOSParameters struct {
 	// Name of the posture check.
 	Name string `json:"name"`
-	// OperatingSystems to check.
-	OperatingSystems []OperatingSystem `json:"operatingSystems,omitempty"`
+	// OperatingSystems that pass the check.
+	// +kubebuilder:validation:MinItems=1
+	OperatingSystems []OperatingSystem `json:"operatingSystems"`
 	// RoleAttributes for the posture check.
 	// +optional
 	RoleAttributes []string `json:"roleAttributes,omitempty"`
+	// Tags is a map of tags.
+	// +optional
+	Tags map[string]string `json:"tags,omitempty"`
 }
 
 // PostureCheckOSStatus defines the observed state of a PostureCheckOS.
@@ -41,9 +46,10 @@ type PostureCheckOSStatus struct {
 type PostureCheckOSObservation struct {
 	ID               string            `json:"id,omitempty"`
 	Name             string            `json:"name,omitempty"`
-	Type             string            `json:"type,omitempty"`
+	TypeID           string            `json:"typeId,omitempty"`
 	OperatingSystems []OperatingSystem `json:"operatingSystems,omitempty"`
 	RoleAttributes   []string          `json:"roleAttributes,omitempty"`
+	Tags             map[string]string `json:"tags,omitempty"`
 	CreatedAt        string            `json:"createdAt,omitempty"`
 	UpdatedAt        string            `json:"updatedAt,omitempty"`
 }

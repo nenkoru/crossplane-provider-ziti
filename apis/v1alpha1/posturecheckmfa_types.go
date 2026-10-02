@@ -22,6 +22,19 @@ type PostureCheckMFAParameters struct {
 	// +optional
 	// +kubebuilder:default=-1
 	TimeoutSeconds *int64 `json:"timeoutSeconds,omitempty"`
+	// PromptOnWake asks for MFA again when the device wakes up.
+	// +optional
+	PromptOnWake *bool `json:"promptOnWake,omitempty"`
+	// PromptOnUnlock asks for MFA again when the device is unlocked.
+	// +optional
+	PromptOnUnlock *bool `json:"promptOnUnlock,omitempty"`
+	// IgnoreLegacyEndpoints does not apply the timeout and prompts to
+	// endpoints that do not support them.
+	// +optional
+	IgnoreLegacyEndpoints *bool `json:"ignoreLegacyEndpoints,omitempty"`
+	// Tags is a map of tags.
+	// +optional
+	Tags map[string]string `json:"tags,omitempty"`
 }
 
 // PostureCheckMFAStatus defines the observed state of a PostureCheckMFA.
@@ -32,13 +45,17 @@ type PostureCheckMFAStatus struct {
 
 // PostureCheckMFAObservation keeps the observed state.
 type PostureCheckMFAObservation struct {
-	ID             string   `json:"id,omitempty"`
-	Name           string   `json:"name,omitempty"`
-	Type           string   `json:"type,omitempty"`
-	RoleAttributes []string `json:"roleAttributes,omitempty"`
-	TimeoutSeconds int64    `json:"timeoutSeconds,omitempty"`
-	CreatedAt      string   `json:"createdAt,omitempty"`
-	UpdatedAt      string   `json:"updatedAt,omitempty"`
+	ID                    string            `json:"id,omitempty"`
+	Name                  string            `json:"name,omitempty"`
+	TypeID                string            `json:"typeId,omitempty"`
+	RoleAttributes        []string          `json:"roleAttributes,omitempty"`
+	TimeoutSeconds        int64             `json:"timeoutSeconds,omitempty"`
+	PromptOnWake          bool              `json:"promptOnWake,omitempty"`
+	PromptOnUnlock        bool              `json:"promptOnUnlock,omitempty"`
+	IgnoreLegacyEndpoints bool              `json:"ignoreLegacyEndpoints,omitempty"`
+	Tags                  map[string]string `json:"tags,omitempty"`
+	CreatedAt             string            `json:"createdAt,omitempty"`
+	UpdatedAt             string            `json:"updatedAt,omitempty"`
 }
 
 // PostureCheckMFA is the top level Ziti MFA Posture Check resource.

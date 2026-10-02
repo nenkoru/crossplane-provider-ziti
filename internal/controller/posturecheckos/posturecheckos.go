@@ -55,5 +55,6 @@ func desired(_ context.Context, _ *client.Client, mg *v1alpha1.PostureCheckOS) (
 		"typeId":           "OS",
 		"roleAttributes":   generic.Strings(p.RoleAttributes),
 		"operatingSystems": operatingSystems,
+		"tags":             generic.Tags(p.Tags),
 	}, nil
 }

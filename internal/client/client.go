@@ -186,6 +186,13 @@ func (c *Client) Patch(ctx context.Context, collection, id string, body any) err
 	return err
 }
 
+// Put replaces an entity: fields that are left out of the body are reset to
+// their defaults.
+func (c *Client) Put(ctx context.Context, collection, id string, body any) error {
+	_, err := c.do(ctx, http.MethodPut, entityPath(collection, id), body)
+	return err
+}
+
 // Delete deletes an entity.
 func (c *Client) Delete(ctx context.Context, collection, id string) error {
 	_, err := c.do(ctx, http.MethodDelete, entityPath(collection, id), nil)

@@ -9,5 +9,7 @@ spec:
   forProvider:
     name: mfa
     timeoutSeconds: 3600
+    promptOnWake: true
+    promptOnUnlock: true
     roleAttributes:
       - mfa

@@ -113,11 +113,21 @@ func TestLifecycle(t *testing.T) {
 		t.Errorf("Get(...): -want, +got:\n%s", diff)
 	}
 
-	if err := c.Patch(ctx, "services", id, map[string]any{"encryptionRequired": false}); err != nil {
+	if err := c.Patch(ctx, "services", id, map[string]any{"terminatorStrategy": "weighted"}); err != nil {
 		t.Fatalf("Patch(...): %v", err)
 	}
-	if got := srv.Entity("services", id)["encryptionRequired"]; got != false {
-		t.Errorf("Patch(...): want encryptionRequired false, got %v", got)
+	patched := map[string]any{"id": id, "name": "web", "encryptionRequired": true, "terminatorStrategy": "weighted"}
+	if diff := cmp.Diff(patched, srv.Entity("services", id)); diff != "" {
+		t.Errorf("entity after Patch(...): -want, +got:\n%s", diff)
+	}
+
+	// Put replaces the entity: what is left out is gone.
+	if err := c.Put(ctx, "services", id, map[string]any{"name": "web", "encryptionRequired": false}); err != nil {
+		t.Fatalf("Put(...): %v", err)
+	}
+	replaced := map[string]any{"id": id, "name": "web", "encryptionRequired": false}
+	if diff := cmp.Diff(replaced, srv.Entity("services", id)); diff != "" {
+		t.Errorf("entity after Put(...): -want, +got:\n%s", diff)
 	}
 
 	if err := c.Delete(ctx, "services", id); err != nil {

@@ -557,12 +557,18 @@ func TestPostureCheckMFA(t *testing.T) {
 				TimeoutSeconds: ptr.To(int64(-1)),
 			}},
 		},
-		created: map[string]any{"name": "mfa", "typeId": "MFA", "roleAttributes": []any{}, "timeoutSeconds": float64(-1)},
+		created: map[string]any{
+			"name": "mfa", "typeId": "MFA", "roleAttributes": []any{}, "timeoutSeconds": float64(-1), "tags": map[string]any{},
+		},
 		update: func(mg *v1alpha1.PostureCheckMFA) {
 			mg.Spec.ForProvider.TimeoutSeconds = ptr.To(int64(300))
+			mg.Spec.ForProvider.PromptOnWake = ptr.To(true)
 			mg.Spec.ForProvider.RoleAttributes = []string{"strict"}
 		},
-		updated: map[string]any{"name": "mfa", "typeId": "MFA", "roleAttributes": []any{"strict"}, "timeoutSeconds": float64(300)},
+		updated: map[string]any{
+			"name": "mfa", "typeId": "MFA", "roleAttributes": []any{"strict"}, "timeoutSeconds": float64(300),
+			"promptOnWake": true, "tags": map[string]any{},
+		},
 	}.run(t)
 }
 
@@ -581,6 +587,7 @@ func TestPostureCheckOS(t *testing.T) {
 			"typeId":           "OS",
 			"roleAttributes":   []any{},
 			"operatingSystems": []any{map[string]any{"type": "Linux", "versions": []any{}}},
+			"tags":             map[string]any{},
 		},
 		update: func(mg *v1alpha1.PostureCheckOS) {
 			mg.Spec.ForProvider.OperatingSystems = []v1alpha1.OperatingSystem{{Type: "Linux", Versions: []string{">=5.0.0"}}}
@@ -590,11 +597,30 @@ func TestPostureCheckOS(t *testing.T) {
 			"typeId":           "OS",
 			"roleAttributes":   []any{},
 			"operatingSystems": []any{map[string]any{"type": "Linux", "versions": []any{">=5.0.0"}}},
+			"tags":             map[string]any{},
 		},
 	}.run(t)
 }
 
 func TestAuthPolicy(t *testing.T) {
+	// Every method is always sent, with what the spec leaves out not allowed.
+	policy := func(cert, updb map[string]any, secondary map[string]any) map[string]any {
+		return map[string]any{
+			"name": "certs-only",
+			"primary": map[string]any{
+				"cert":   cert,
+				"updb":   updb,
+				"extJwt": map[string]any{"allowed": false, "allowedSigners": []any{}},
+			},
+			"secondary": secondary,
+			"tags":      map[string]any{},
+		}
+	}
+	noPasswords := map[string]any{
+		"allowed": false, "minPasswordLength": float64(5), "maxAttempts": float64(5), "lockoutDurationMinutes": float64(0),
+		"requireMixedCase": false, "requireNumberChar": false, "requireSpecialChar": false,
+	}
+
 	lifecycle[*v1alpha1.AuthPolicy]{
 		kind: authpolicy.Kind,
 		mg: &v1alpha1.AuthPolicy{
@@ -604,17 +630,24 @@ func TestAuthPolicy(t *testing.T) {
 				Primary: &v1alpha1.AuthMethods{Cert: &v1alpha1.CertAuth{Allowed: true}},
 			}},
 		},
-		created: map[string]any{
-			"name":    "certs-only",
-			"primary": map[string]any{"cert": map[string]any{"allowed": true, "allowExpiredCerts": false}},
-		},
+		created: policy(
+			map[string]any{"allowed": true, "allowExpiredCerts": false},
+			noPasswords,
+			map[string]any{"requireTotp": false, "requireExtJwtSigner": nil},
+		),
 		update: func(mg *v1alpha1.AuthPolicy) {
 			mg.Spec.ForProvider.Primary.Cert.AllowExpiredCerts = true
+			mg.Spec.ForProvider.Primary.UPDB = &v1alpha1.UPDBAuth{Allowed: true, MinPasswordLength: ptr.To(int64(12)), RequireNumberChar: true}
+			mg.Spec.ForProvider.Secondary = &v1alpha1.SecondaryAuth{RequireTOTP: true}
 		},
-		updated: map[string]any{
-			"name":    "certs-only",
-			"primary": map[string]any{"cert": map[string]any{"allowed": true, "allowExpiredCerts": true}},
-		},
+		updated: policy(
+			map[string]any{"allowed": true, "allowExpiredCerts": true},
+			map[string]any{
+				"allowed": true, "minPasswordLength": float64(12), "maxAttempts": float64(5), "lockoutDurationMinutes": float64(0),
+				"requireMixedCase": false, "requireNumberChar": true, "requireSpecialChar": false,
+			},
+			map[string]any{"requireTotp": true, "requireExtJwtSigner": nil},
+		),
 	}.run(t)
 }
 

@@ -22,9 +22,17 @@ import (
 	"context"
 	"encoding/json"
 
+	"k8s.io/utils/ptr"
+
 	"github.com/crossplane/provider-ziti/apis/v1alpha1"
 	"github.com/crossplane/provider-ziti/internal/client"
 	"github.com/crossplane/provider-ziti/internal/controller/generic"
+)
+
+// Defaults of the Ziti API for password authentication.
+const (
+	defaultMinPasswordLength int64 = 5
+	defaultMaxAttempts       int64 = 5
 )
 
 // Kind describes how an AuthPolicy maps to the Ziti API.
@@ -33,45 +41,52 @@ var Kind = generic.Kind[*v1alpha1.AuthPolicy]{
 	List:       &v1alpha1.AuthPolicyList{},
 	Collection: "auth-policies",
 	Desired:    desired,
+	// A PATCH of an auth policy silently ignores some of the password
+	// settings. The desired state is always complete, so nothing is lost by
+	// replacing the policy.
+	ReplaceOnUpdate: true,
 	Observe: func(mg *v1alpha1.AuthPolicy, entity json.RawMessage) error {
 		return generic.Unmarshal(entity, &mg.Status.AtProvider)
 	},
 }
 
+// desired always describes every authentication method: the Ziti API
+// requires all of them, and a method that is left out of the spec is not
+// allowed.
 func desired(_ context.Context, _ *client.Client, mg *v1alpha1.AuthPolicy) (map[string]any, error) {
 	p := mg.Spec.ForProvider
 
-	body := map[string]any{"name": p.Name}
-	if p.Primary != nil {
-		body["primary"] = authMethods(p.Primary)
-	}
-	if p.Secondary != nil {
-		body["secondary"] = authMethods(p.Secondary)
-	}
-	return body, nil
-}
+	primary := ptr.Deref(p.Primary, v1alpha1.AuthMethods{})
+	cert := ptr.Deref(primary.Cert, v1alpha1.CertAuth{})
+	updb := ptr.Deref(primary.UPDB, v1alpha1.UPDBAuth{})
+	extJWT := ptr.Deref(primary.ExtJWT, v1alpha1.ExtJWTAuth{})
+	secondary := ptr.Deref(p.Secondary, v1alpha1.SecondaryAuth{})
 
-func authMethods(m *v1alpha1.AuthMethods) map[string]any {
-	methods := map[string]any{}
-	if m.Cert != nil {
-		methods["cert"] = map[string]any{
-			"allowed":           m.Cert.Allowed,
-			"allowExpiredCerts": m.Cert.AllowExpiredCerts,
-		}
-	}
-	if m.UPDB != nil {
-		methods["updb"] = map[string]any{
-			"allowed":                m.UPDB.Allowed,
-			"minPasswordLength":      m.UPDB.MinPasswordLength,
-			"maxAttempts":            m.UPDB.MaxAttempts,
-			"lockoutDurationMinutes": m.UPDB.LockoutDurationMinutes,
-		}
-	}
-	if m.ExtJWT != nil {
-		methods["extJwt"] = map[string]any{
-			"allowed":        m.ExtJWT.Allowed,
-			"allowedSigners": generic.Strings(m.ExtJWT.AllowedSigners),
-		}
-	}
-	return methods
+	return map[string]any{
+		"name": p.Name,
+		"primary": map[string]any{
+			"cert": map[string]any{
+				"allowed":           cert.Allowed,
+				"allowExpiredCerts": cert.AllowExpiredCerts,
+			},
+			"updb": map[string]any{
+				"allowed":                updb.Allowed,
+				"minPasswordLength":      ptr.Deref(updb.MinPasswordLength, defaultMinPasswordLength),
+				"maxAttempts":            ptr.Deref(updb.MaxAttempts, defaultMaxAttempts),
+				"lockoutDurationMinutes": ptr.Deref(updb.LockoutDurationMinutes, 0),
+				"requireMixedCase":       updb.RequireMixedCase,
+				"requireNumberChar":      updb.RequireNumberChar,
+				"requireSpecialChar":     updb.RequireSpecialChar,
+			},
+			"extJwt": map[string]any{
+				"allowed":        extJWT.Allowed,
+				"allowedSigners": generic.Strings(extJWT.AllowedSigners),
+			},
+		},
+		"secondary": map[string]any{
+			"requireTotp":         secondary.RequireTOTP,
+			"requireExtJwtSigner": secondary.RequireExtJWTSigner,
+		},
+		"tags": generic.Tags(p.Tags),
+	}, nil
 }

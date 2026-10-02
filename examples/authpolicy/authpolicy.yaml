@@ -1,18 +1,20 @@
+# Identities with this policy authenticate with a certificate and a one-time
+# password. Methods that are left out are not allowed.
 apiVersion: ziti.crossplane.io/v1alpha1
 kind: AuthPolicy
 metadata:
-  name: certificates-only
+  name: certificates-and-totp
 spec:
   providerConfigRef:
     kind: ProviderConfig
     name: default
   forProvider:
-    name: certificates-only
+    name: certificates-and-totp
     primary:
       cert:
         allowed: true
         allowExpiredCerts: false
-      updb:
-        allowed: false
-      extJwt:
-        allowed: false
+    secondary:
+      requireTotp: true
+    tags:
+      team: platform

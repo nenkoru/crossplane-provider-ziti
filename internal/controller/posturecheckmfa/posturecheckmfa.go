@@ -46,9 +46,19 @@ func desired(_ context.Context, _ *client.Client, mg *v1alpha1.PostureCheckMFA) 
 		// The type discriminates posture checks and is required on update too.
 		"typeId":         "MFA",
 		"roleAttributes": generic.Strings(p.RoleAttributes),
+		"tags":           generic.Tags(p.Tags),
 	}
 	if p.TimeoutSeconds != nil {
 		body["timeoutSeconds"] = *p.TimeoutSeconds
+	}
+	if p.PromptOnWake != nil {
+		body["promptOnWake"] = *p.PromptOnWake
+	}
+	if p.PromptOnUnlock != nil {
+		body["promptOnUnlock"] = *p.PromptOnUnlock
+	}
+	if p.IgnoreLegacyEndpoints != nil {
+		body["ignoreLegacyEndpoints"] = *p.IgnoreLegacyEndpoints
 	}
 	return body, nil
 }

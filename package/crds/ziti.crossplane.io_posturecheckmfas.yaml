@@ -60,14 +60,32 @@ spec:
                 description: PostureCheckMFAParameters define the desired state of
                   an MFA Posture Check.
                 properties:
+                  ignoreLegacyEndpoints:
+                    description: |-
+                      IgnoreLegacyEndpoints does not apply the timeout and prompts to
+                      endpoints that do not support them.
+                    type: boolean
                   name:
                     description: Name of the posture check.
                     type: string
+                  promptOnUnlock:
+                    description: PromptOnUnlock asks for MFA again when the device
+                      is unlocked.
+                    type: boolean
+                  promptOnWake:
+                    description: PromptOnWake asks for MFA again when the device wakes
+                      up.
+                    type: boolean
                   roleAttributes:
                     description: RoleAttributes for the posture check.
                     items:
                       type: string
                     type: array
+                  tags:
+                    additionalProperties:
+                      type: string
+                    description: Tags is a map of tags.
+                    type: object
                   timeoutSeconds:
                     default: -1
                     description: TimeoutSeconds for the MFA check. -1 means no timeout.
@@ -144,16 +162,26 @@ spec:
                     type: string
                   id:
                     type: string
+                  ignoreLegacyEndpoints:
+                    type: boolean
                   name:
                     type: string
+                  promptOnUnlock:
+                    type: boolean
+                  promptOnWake:
+                    type: boolean
                   roleAttributes:
                     items:
                       type: string
                     type: array
+                  tags:
+                    additionalProperties:
+                      type: string
+                    type: object
                   timeoutSeconds:
                     format: int64
                     type: integer
-                  type:
+                  typeId:
                     type: string
                   updatedAt:
                     type: string

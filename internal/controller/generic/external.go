@@ -66,6 +66,11 @@ type Kind[T resource.ModernManaged] struct {
 	// API to resolve references to other entities.
 	Desired func(ctx context.Context, api *client.Client, mg T) (map[string]any, error)
 
+	// ReplaceOnUpdate updates the entity with PUT instead of PATCH. PUT resets
+	// every field that Desired leaves out to its default; use it for kinds
+	// whose PATCH does not apply all fields.
+	ReplaceOnUpdate bool
+
 	// CreateOnly optionally returns fields that are only sent when the entity
 	// is created, because they are immutable or write-only.
 	CreateOnly func(ctx context.Context, api *client.Client, mg T) (map[string]any, error)
@@ -218,7 +223,11 @@ func (e *external[T]) Update(ctx context.Context, mg T) (managed.ExternalUpdate,
 		return managed.ExternalUpdate{}, errors.Wrap(err, errDesired)
 	}
 
-	if err := e.api.Patch(ctx, e.kind.Collection, meta.GetExternalName(mg), desired); err != nil {
+	update := e.api.Patch
+	if e.kind.ReplaceOnUpdate {
+		update = e.api.Put
+	}
+	if err := update(ctx, e.kind.Collection, meta.GetExternalName(mg), desired); err != nil {
 		return managed.ExternalUpdate{}, errors.Wrap(err, errUpdate)
 	}
 	return managed.ExternalUpdate{}, nil

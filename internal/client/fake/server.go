@@ -166,6 +166,8 @@ func (s *Server) route(w http.ResponseWriter, r *http.Request, collection, id st
 		s.get(w, collection, id)
 	case r.Method == http.MethodPatch:
 		s.patch(w, r, collection, id)
+	case r.Method == http.MethodPut:
+		s.replace(w, r, collection, id)
 	case r.Method == http.MethodDelete:
 		s.remove(w, collection, id)
 	default:
@@ -264,7 +266,31 @@ func (s *Server) patch(w http.ResponseWriter, r *http.Request, collection, id st
 		writeError(w, http.StatusBadRequest, "COULD_NOT_PARSE_BODY", nil)
 		return
 	}
+	// Like the real controller, a PATCH silently ignores encryptionRequired
+	// of a service and does not change an auth policy reliably.
+	switch collection {
+	case "services":
+		delete(fields, "encryptionRequired")
+	case "auth-policies":
+		delete(fields, "primary")
+	}
 	maps.Copy(entity, fields)
+	writeData(w, http.StatusOK, map[string]any{})
+}
+
+func (s *Server) replace(w http.ResponseWriter, r *http.Request, collection, id string) {
+	if _, ok := s.collections[collection][id]; !ok {
+		writeError(w, http.StatusNotFound, "NOT_FOUND", nil)
+		return
+	}
+
+	entity := map[string]any{}
+	if err := json.NewDecoder(r.Body).Decode(&entity); err != nil {
+		writeError(w, http.StatusBadRequest, "COULD_NOT_PARSE_BODY", nil)
+		return
+	}
+	entity["id"] = id
+	s.put(collection, entity)
 	writeData(w, http.StatusOK, map[string]any{})
 }
 

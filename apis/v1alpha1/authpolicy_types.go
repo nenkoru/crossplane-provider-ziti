@@ -15,15 +15,18 @@ type AuthPolicySpec struct {
 type AuthPolicyParameters struct {
 	// Name of the auth policy.
 	Name string `json:"name"`
-	// Primary authentication methods.
+	// Primary authentication methods. A method that is not set is not allowed.
 	// +optional
 	Primary *AuthMethods `json:"primary,omitempty"`
-	// Secondary authentication methods.
+	// Secondary authentication factors.
 	// +optional
-	Secondary *AuthMethods `json:"secondary,omitempty"`
+	Secondary *SecondaryAuth `json:"secondary,omitempty"`
+	// Tags is a map of tags.
+	// +optional
+	Tags map[string]string `json:"tags,omitempty"`
 }
 
-// AuthMethods defines primary or secondary auth methods.
+// AuthMethods defines the primary authentication methods.
 type AuthMethods struct {
 	// Cert-based authentication.
 	// +optional
@@ -40,7 +43,6 @@ type AuthMethods struct {
 type CertAuth struct {
 	// Allowed enables cert authentication.
 	// +optional
-	// +kubebuilder:default=true
 	Allowed bool `json:"allowed,omitempty"`
 	// AllowExpiredCerts allows expired certificates.
 	// +optional
@@ -51,17 +53,29 @@ type CertAuth struct {
 type UPDBAuth struct {
 	// Allowed enables password authentication.
 	// +optional
-	// +kubebuilder:default=true
 	Allowed bool `json:"allowed,omitempty"`
-	// MinPasswordLength minimum password length.
+	// MinPasswordLength is the minimum password length.
 	// +optional
-	MinPasswordLength int `json:"minPasswordLength,omitempty"`
-	// MaxAttempts maximum login attempts before lockout.
+	// +kubebuilder:default=5
+	MinPasswordLength *int64 `json:"minPasswordLength,omitempty"`
+	// MaxAttempts is the number of failed logins before lockout.
 	// +optional
-	MaxAttempts int `json:"maxAttempts,omitempty"`
-	// LockoutDurationMinutes duration of lockout in minutes.
+	// +kubebuilder:default=5
+	MaxAttempts *int64 `json:"maxAttempts,omitempty"`
+	// LockoutDurationMinutes is the duration of a lockout in minutes. Zero
+	// locks the identity until an administrator unlocks it.
 	// +optional
-	LockoutDurationMinutes int `json:"lockoutDurationMinutes,omitempty"`
+	// +kubebuilder:default=0
+	LockoutDurationMinutes *int64 `json:"lockoutDurationMinutes,omitempty"`
+	// RequireMixedCase requires passwords to have upper and lower case letters.
+	// +optional
+	RequireMixedCase bool `json:"requireMixedCase,omitempty"`
+	// RequireNumberChar requires passwords to have a digit.
+	// +optional
+	RequireNumberChar bool `json:"requireNumberChar,omitempty"`
+	// RequireSpecialChar requires passwords to have a special character.
+	// +optional
+	RequireSpecialChar bool `json:"requireSpecialChar,omitempty"`
 }
 
 // ExtJWTAuth defines external JWT authentication settings.
@@ -69,9 +83,20 @@ type ExtJWTAuth struct {
 	// Allowed enables external JWT authentication.
 	// +optional
 	Allowed bool `json:"allowed,omitempty"`
-	// AllowedSigners list of allowed JWT signer IDs.
+	// AllowedSigners is the list of IDs of the allowed external JWT signers.
 	// +optional
 	AllowedSigners []string `json:"allowedSigners,omitempty"`
+}
+
+// SecondaryAuth defines the secondary authentication factors.
+type SecondaryAuth struct {
+	// RequireTOTP requires a time-based one-time password.
+	// +optional
+	RequireTOTP bool `json:"requireTotp,omitempty"`
+	// RequireExtJWTSigner is the ID of an external JWT signer whose token is
+	// required in addition to the primary method.
+	// +optional
+	RequireExtJWTSigner *string `json:"requireExtJwtSigner,omitempty"`
 }
 
 // AuthPolicyStatus defines the observed state of an AuthPolicy.
@@ -82,10 +107,13 @@ type AuthPolicyStatus struct {
 
 // AuthPolicyObservation keeps the observed state.
 type AuthPolicyObservation struct {
-	ID        string `json:"id,omitempty"`
-	Name      string `json:"name,omitempty"`
-	CreatedAt string `json:"createdAt,omitempty"`
-	UpdatedAt string `json:"updatedAt,omitempty"`
+	ID        string            `json:"id,omitempty"`
+	Name      string            `json:"name,omitempty"`
+	Primary   *AuthMethods      `json:"primary,omitempty"`
+	Secondary *SecondaryAuth    `json:"secondary,omitempty"`
+	Tags      map[string]string `json:"tags,omitempty"`
+	CreatedAt string            `json:"createdAt,omitempty"`
+	UpdatedAt string            `json:"updatedAt,omitempty"`
 }
 
 // AuthPolicy is the top level Ziti Auth Policy resource.

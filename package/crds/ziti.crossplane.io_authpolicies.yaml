@@ -64,7 +64,8 @@ spec:
                     description: Name of the auth policy.
                     type: string
                   primary:
-                    description: Primary authentication methods.
+                    description: Primary authentication methods. A method that is
+                      not set is not allowed.
                     properties:
                       cert:
                         description: Cert-based authentication.
@@ -73,7 +74,6 @@ spec:
                             description: AllowExpiredCerts allows expired certificates.
                             type: boolean
                           allowed:
-                            default: true
                             description: Allowed enables cert authentication.
                             type: boolean
                         type: object
@@ -84,8 +84,8 @@ spec:
                             description: Allowed enables external JWT authentication.
                             type: boolean
                           allowedSigners:
-                            description: AllowedSigners list of allowed JWT signer
-                              IDs.
+                            description: AllowedSigners is the list of IDs of the
+                              allowed external JWT signers.
                             items:
                               type: string
                             type: array
@@ -94,68 +94,57 @@ spec:
                         description: Password (UPDB) authentication.
                         properties:
                           allowed:
-                            default: true
                             description: Allowed enables password authentication.
                             type: boolean
                           lockoutDurationMinutes:
-                            description: LockoutDurationMinutes duration of lockout
-                              in minutes.
+                            default: 0
+                            description: |-
+                              LockoutDurationMinutes is the duration of a lockout in minutes. Zero
+                              locks the identity until an administrator unlocks it.
+                            format: int64
                             type: integer
                           maxAttempts:
-                            description: MaxAttempts maximum login attempts before
-                              lockout.
+                            default: 5
+                            description: MaxAttempts is the number of failed logins
+                              before lockout.
+                            format: int64
                             type: integer
                           minPasswordLength:
-                            description: MinPasswordLength minimum password length.
+                            default: 5
+                            description: MinPasswordLength is the minimum password
+                              length.
+                            format: int64
                             type: integer
+                          requireMixedCase:
+                            description: RequireMixedCase requires passwords to have
+                              upper and lower case letters.
+                            type: boolean
+                          requireNumberChar:
+                            description: RequireNumberChar requires passwords to have
+                              a digit.
+                            type: boolean
+                          requireSpecialChar:
+                            description: RequireSpecialChar requires passwords to
+                              have a special character.
+                            type: boolean
                         type: object
                     type: object
                   secondary:
-                    description: Secondary authentication methods.
+                    description: Secondary authentication factors.
                     properties:
-                      cert:
-                        description: Cert-based authentication.
-                        properties:
-                          allowExpiredCerts:
-                            description: AllowExpiredCerts allows expired certificates.
-                            type: boolean
-                          allowed:
-                            default: true
-                            description: Allowed enables cert authentication.
-                            type: boolean
-                        type: object
-                      extJwt:
-                        description: External JWT authentication.
-                        properties:
-                          allowed:
-                            description: Allowed enables external JWT authentication.
-                            type: boolean
-                          allowedSigners:
-                            description: AllowedSigners list of allowed JWT signer
-                              IDs.
-                            items:
-                              type: string
-                            type: array
-                        type: object
-                      updb:
-                        description: Password (UPDB) authentication.
-                        properties:
-                          allowed:
-                            default: true
-                            description: Allowed enables password authentication.
-                            type: boolean
-                          lockoutDurationMinutes:
-                            description: LockoutDurationMinutes duration of lockout
-                              in minutes.
-                            type: integer
-                          maxAttempts:
-                            description: MaxAttempts maximum login attempts before
-                              lockout.
-                            type: integer
-                          minPasswordLength:
-                            description: MinPasswordLength minimum password length.
-                            type: integer
-                        type: object
+                      requireExtJwtSigner:
+                        description: |-
+                          RequireExtJWTSigner is the ID of an external JWT signer whose token is
+                          required in addition to the primary method.
+                        type: string
+                      requireTotp:
+                        description: RequireTOTP requires a time-based one-time password.
+                        type: boolean
+                    type: object
+                  tags:
+                    additionalProperties:
+                      type: string
+                    description: Tags is a map of tags.
                     type: object
                 required:
                 - name
@@ -230,6 +219,88 @@ spec:
                     type: string
                   name:
                     type: string
+                  primary:
+                    description: AuthMethods defines the primary authentication methods.
+                    properties:
+                      cert:
+                        description: Cert-based authentication.
+                        properties:
+                          allowExpiredCerts:
+                            description: AllowExpiredCerts allows expired certificates.
+                            type: boolean
+                          allowed:
+                            description: Allowed enables cert authentication.
+                            type: boolean
+                        type: object
+                      extJwt:
+                        description: External JWT authentication.
+                        properties:
+                          allowed:
+                            description: Allowed enables external JWT authentication.
+                            type: boolean
+                          allowedSigners:
+                            description: AllowedSigners is the list of IDs of the
+                              allowed external JWT signers.
+                            items:
+                              type: string
+                            type: array
+                        type: object
+                      updb:
+                        description: Password (UPDB) authentication.
+                        properties:
+                          allowed:
+                            description: Allowed enables password authentication.
+                            type: boolean
+                          lockoutDurationMinutes:
+                            default: 0
+                            description: |-
+                              LockoutDurationMinutes is the duration of a lockout in minutes. Zero
+                              locks the identity until an administrator unlocks it.
+                            format: int64
+                            type: integer
+                          maxAttempts:
+                            default: 5
+                            description: MaxAttempts is the number of failed logins
+                              before lockout.
+                            format: int64
+                            type: integer
+                          minPasswordLength:
+                            default: 5
+                            description: MinPasswordLength is the minimum password
+                              length.
+                            format: int64
+                            type: integer
+                          requireMixedCase:
+                            description: RequireMixedCase requires passwords to have
+                              upper and lower case letters.
+                            type: boolean
+                          requireNumberChar:
+                            description: RequireNumberChar requires passwords to have
+                              a digit.
+                            type: boolean
+                          requireSpecialChar:
+                            description: RequireSpecialChar requires passwords to
+                              have a special character.
+                            type: boolean
+                        type: object
+                    type: object
+                  secondary:
+                    description: SecondaryAuth defines the secondary authentication
+                      factors.
+                    properties:
+                      requireExtJwtSigner:
+                        description: |-
+                          RequireExtJWTSigner is the ID of an external JWT signer whose token is
+                          required in addition to the primary method.
+                        type: string
+                      requireTotp:
+                        description: RequireTOTP requires a time-based one-time password.
+                        type: boolean
+                    type: object
+                  tags:
+                    additionalProperties:
+                      type: string
+                    type: object
                   updatedAt:
                     type: string
                 type: object

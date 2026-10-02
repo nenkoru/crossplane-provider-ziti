@@ -62,6 +62,24 @@ func TestFirstDifference(t *testing.T) {
 			desired:  map[string]any{"tags": map[string]string{}},
 			observed: `{"tags": null}`,
 		},
+		"FalseEqualsAbsent": {
+			desired:  map[string]any{"promptOnWake": false, "cost": 0, "externalId": ""},
+			observed: `{}`,
+		},
+		"FalseDiffersFromTrue": {
+			desired:  map[string]any{"promptOnWake": false},
+			observed: `{"promptOnWake": true}`,
+			want:     "promptOnWake",
+		},
+		"TrueDiffersFromAbsent": {
+			desired:  map[string]any{"promptOnWake": true},
+			observed: `{}`,
+			want:     "promptOnWake",
+		},
+		"NestedFalseEqualsAbsent": {
+			desired:  map[string]any{"primary": map[string]any{"cert": map[string]any{"allowed": true, "allowExpiredCerts": false}}},
+			observed: `{"primary": {"cert": {"allowed": true}}}`,
+		},
 		"TopLevelStringListIsASet": {
 			desired:  map[string]any{"identityRoles": []string{"#b", "@id-1", "#a"}},
 			observed: `{"identityRoles": ["#a", "#b", "@id-1"]}`,
