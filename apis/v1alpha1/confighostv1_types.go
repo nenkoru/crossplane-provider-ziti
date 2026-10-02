@@ -109,8 +109,8 @@ type HTTPCheck struct {
 	// ExpectStatus is the expected HTTP status code.
 	// +optional
 	// +kubebuilder:default=200
-	// +kubebuilder:validation:Minimum=1
-	// +kubebuilder:validation:Maximum=1000
+	// +kubebuilder:validation:Minimum=100
+	// +kubebuilder:validation:Maximum=599
 	ExpectStatus *int32 `json:"expectStatus,omitempty"`
 
 	// ExpectInBody is the expected string in response body.

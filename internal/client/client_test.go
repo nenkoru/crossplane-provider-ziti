@@ -275,6 +275,14 @@ func TestIsRejected(t *testing.T) {
 	if got := srv.Len("services"); got != 2 {
 		t.Errorf("want Ziti to have carried out the request it did not answer, got %d services", got)
 	}
+
+	// A timeout or a rate limit may come from a proxy after the controller
+	// carried out the request.
+	for status, want := range map[int]bool{400: true, 404: true, 409: true, 408: false, 429: false, 500: false, 502: false} {
+		if got := client.IsRejected(&client.Error{StatusCode: status}); got != want {
+			t.Errorf("IsRejected(status %d): got %t, want %t", status, got, want)
+		}
+	}
 }
 
 func TestAuthenticationFailure(t *testing.T) {
