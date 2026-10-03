@@ -117,17 +117,26 @@ How to read the table:
   show when it expires in `status.atProvider.enrollmentExpiresAt`. Ziti
   stops reporting the token once it is used; the Secret keeps the last one.
 - **Renewal of enrollment tokens.** A token that can no longer be used is
-  replaced, in Ziti and in the Secret, as long as the identity or edge router
-  has not enrolled: when its enrollment has expired, and when it has none
-  because the enrollment was deleted in Ziti. An enrollment that has expired
-  is refreshed, a missing one is created with the method of the kind, and an
-  edge router is enrolled anew.
-  - It never happens to an identity that has an authenticator, nor to an
-    edge router that is verified or has a certificate: these have enrolled,
-    and enrolling an edge router anew would take its certificate away and
-    disconnect it. Without that information from Ziti nothing is renewed
-    either. An identity whose authenticators were all deleted in Ziti counts
-    as not enrolled, so it gets a token again.
+  replaced, in Ziti and in the Secret, as long as the identity cannot sign
+  in or the edge router has not enrolled: when its enrollment has expired,
+  and when it has none because the enrollment was deleted in Ziti. An
+  enrollment that has expired is refreshed, a missing one is created with
+  the method of the kind, and an edge router is enrolled anew.
+  - An identity counts as able to sign in, and is never given a token, if
+    Ziti reports an authenticator for it, if it has an `externalId`, or if
+    its auth policy allows external JWTs as the first factor from a signer
+    that is enabled and has `useExternalId: false`, which looks identities
+    up by their Ziti ID. Ziti reports no authenticator for an identity that
+    signs in with an external JWT, nor for one that signs in with a
+    certificate of a certificate authority that carries its external ID.
+    The default auth policy allows every signer, so one such signer stops
+    renewal for every identity under that policy.
+  - It never happens to an edge router that is verified or has a
+    certificate: it has enrolled, and enrolling it anew would take its
+    certificate away and disconnect it. Nothing is renewed either when Ziti
+    does not report the authenticators of an identity or whether an edge
+    router is verified. An identity whose authenticators were all deleted in
+    Ziti, and that cannot sign in otherwise, gets a token again.
   - A token is replaced only once it has expired on the clock of the
     controller, five seconds ago or more, never while it can still be used.
   - The new token of an identity is valid for
@@ -314,7 +323,8 @@ API: the entities exist as declared, follow spec changes, are restored after
 being changed in Ziti directly, are not updated without a spec change, and
 are deleted with their managed resources. It also lets an enrollment expire,
 deletes others and enrolls an identity and an edge router, and checks that
-the tokens are replaced and that what has enrolled is left alone. It starts
+the tokens are replaced and that what has enrolled, or can sign in without
+an authenticator, is left alone. It starts
 OpenZiti 2.0.6; set
 `ZITI_VERSION` for another release. In CI the `unit-tests` job runs it after
 the unit tests, until the workflow gets a job of its own for it.

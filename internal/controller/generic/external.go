@@ -97,7 +97,7 @@ type Kind[T resource.ModernManaged] struct {
 	// there is none, and the function that puts it right. A managed resource
 	// whose entity has a defect is not up to date, and its update calls that
 	// function after it has looked at the entity again.
-	Repair func(api *client.Client, mg T, entity json.RawMessage) (defect string, repair func(ctx context.Context) error, err error)
+	Repair func(ctx context.Context, api *client.Client, mg T, entity json.RawMessage) (defect string, repair func(ctx context.Context) error, err error)
 }
 
 // A Connecter produces a Ziti client for a managed resource.
@@ -190,7 +190,7 @@ func (e *external[T]) diff(ctx context.Context, mg T, entity map[string]any, raw
 	if e.kind.Repair == nil {
 		return "", nil
 	}
-	defect, _, err := e.kind.Repair(e.api, mg, raw)
+	defect, _, err := e.kind.Repair(ctx, e.api, mg, raw)
 	return defect, errors.Wrap(err, errObserve)
 }
 
@@ -271,7 +271,7 @@ func (e *external[T]) repair(ctx context.Context, mg T) error {
 	if err != nil {
 		return err
 	}
-	defect, repair, err := e.kind.Repair(e.api, mg, raw)
+	defect, repair, err := e.kind.Repair(ctx, e.api, mg, raw)
 	if err != nil || defect == "" {
 		return err
 	}

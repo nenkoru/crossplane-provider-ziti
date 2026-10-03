@@ -74,8 +74,8 @@ var Kind = generic.Kind[*v1alpha1.Identity]{
 		return Observe(raw, &mg.Status.AtProvider)
 	},
 	ConnectionDetails: ConnectionDetails,
-	Repair: func(api *client.Client, mg *v1alpha1.Identity, raw json.RawMessage) (string, func(context.Context) error, error) {
-		return RenewEnrollment(api, raw, mg.Spec.ForProvider, "ott", nil)
+	Repair: func(ctx context.Context, api *client.Client, mg *v1alpha1.Identity, raw json.RawMessage) (string, func(context.Context) error, error) {
+		return RenewEnrollment(ctx, api, raw, mg.Spec.ForProvider, "ott", nil)
 	},
 }
 
@@ -94,6 +94,8 @@ type enrollment struct {
 // status as is.
 type entity struct {
 	ID             string                     `json:"id"`
+	ExternalID     string                     `json:"externalId"`
+	AuthPolicyID   string                     `json:"authPolicyId"`
 	Authenticators map[string]json.RawMessage `json:"authenticators"`
 	Enrollment     map[string]enrollment      `json:"enrollment"`
 }
@@ -201,22 +203,19 @@ func ConnectionDetails(raw json.RawMessage) (managed.ConnectionDetails, error) {
 }
 
 // RenewEnrollment finds out whether an identity that enrolls with the
-// supplied method is left without a usable enrollment token: it has not
-// enrolled, and its enrollment has expired or is gone. The function it then
+// supplied method is left without a usable enrollment token: it cannot sign
+// in, and its enrollment has expired or is gone. The function it then
 // returns gives the enrollment a new token, or the identity a new
 // enrollment. An enrollment of a method other than "ott" needs settings of
 // its own, which methodSettings returns.
-//
-// An identity that has enrolled is left alone, with or without an
-// enrollment. So is one of which Ziti does not say what it authenticates
-// with: there is no telling then whether it has enrolled.
-func RenewEnrollment(api *client.Client, raw json.RawMessage, p v1alpha1.IdentityParameters, method string, methodSettings func(ctx context.Context) (map[string]any, error)) (string, func(context.Context) error, error) {
+func RenewEnrollment(ctx context.Context, api *client.Client, raw json.RawMessage, p v1alpha1.IdentityParameters, method string, methodSettings func(ctx context.Context) (map[string]any, error)) (string, func(context.Context) error, error) {
 	var e entity
 	if err := json.Unmarshal(raw, &e); err != nil {
 		return "", nil, err
 	}
-	if e.Authenticators == nil || e.enrolled() {
-		return "", nil, nil
+	current, renew, err := unusable(ctx, api, e, method)
+	if err != nil || !renew {
+		return "", nil, err
 	}
 
 	// The new token expires on the clock of the controller, which is the
@@ -230,7 +229,6 @@ func RenewEnrollment(api *client.Client, raw json.RawMessage, p v1alpha1.Identit
 		return now.Add(duration).UTC().Format(time.RFC3339)
 	}
 
-	current := e.Enrollment[method]
 	if current.ID == "" {
 		return "the identity has not enrolled and has no enrollment", func(ctx context.Context) error {
 			body := map[string]any{"identityId": e.ID, "method": method, "expiresAt": expiresAt()}
@@ -245,15 +243,107 @@ func RenewEnrollment(api *client.Client, raw json.RawMessage, p v1alpha1.Identit
 			return err
 		}, nil
 	}
-
-	expiry, err := time.Parse(time.RFC3339, current.ExpiresAt)
-	if err != nil {
-		return "", nil, err
-	}
-	if !generic.Expired(api, expiry) {
-		return "", nil, nil
-	}
 	return fmt.Sprintf("the identity has not enrolled and its enrollment expired at %s", current.ExpiresAt), func(ctx context.Context) error {
 		return api.Act(ctx, "enrollments", current.ID, "refresh", map[string]any{"expiresAt": expiresAt()})
 	}, nil
+}
+
+// unusable returns true if the identity needs a new enrollment token, along
+// with its enrollment of the supplied method, which has expired, or an empty
+// one if it has none.
+//
+// An identity that can sign in is left alone, with or without an
+// enrollment: one that has an authenticator, one that has an external ID,
+// and one that can sign in with an external JWT that names its ID. Ziti
+// reports no authenticator for the last two, which sign in with a JWT, or a
+// certificate of a certificate authority, that names them. So is one of
+// which Ziti does not say what it authenticates with: there is no telling
+// then whether it has enrolled.
+func unusable(ctx context.Context, api *client.Client, e entity, method string) (enrollment, bool, error) {
+	if e.Authenticators == nil || e.enrolled() || e.ExternalID != "" {
+		return enrollment{}, false, nil
+	}
+
+	current := e.Enrollment[method]
+	if current.ID != "" {
+		expiry, err := time.Parse(time.RFC3339, current.ExpiresAt)
+		if err != nil || !generic.Expired(api, expiry) {
+			return enrollment{}, false, err
+		}
+	}
+
+	// Only now, when the token would be replaced, is it worth asking Ziti.
+	signsIn, err := signsInWithItsID(ctx, api, e.AuthPolicyID)
+	return current, err == nil && !signsIn, err
+}
+
+// signer holds the fields of a Ziti external JWT signer that tell whether
+// identities can sign in with its tokens.
+type signer struct {
+	ID            string `json:"id"`
+	Enabled       bool   `json:"enabled"`
+	UseExternalID bool   `json:"useExternalId"`
+}
+
+// signsInWithItsID returns true if an identity with the supplied auth policy
+// can sign in with an external JWT that names it by its ID: the policy
+// allows external JWTs as the first factor, and a signer it allows is
+// enabled and looks identities up by their ID rather than their external ID.
+func signsInWithItsID(ctx context.Context, api *client.Client, authPolicyID string) (bool, error) {
+	// Ziti gives an identity the default auth policy unless it names one.
+	raw, err := api.Get(ctx, "auth-policies", cmp.Or(authPolicyID, "default"))
+	if client.IsNotFound(err) {
+		// Without its auth policy an identity cannot sign in at all.
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	var policy struct {
+		Primary struct {
+			ExtJWT struct {
+				Allowed        bool     `json:"allowed"`
+				AllowedSigners []string `json:"allowedSigners"`
+			} `json:"extJwt"`
+		} `json:"primary"`
+	}
+	if err := json.Unmarshal(raw, &policy); err != nil || !policy.Primary.ExtJWT.Allowed {
+		return false, err
+	}
+
+	signers, err := allowedSigners(ctx, api, policy.Primary.ExtJWT.AllowedSigners)
+	if err != nil {
+		return false, err
+	}
+	for _, raw := range signers {
+		var s signer
+		if err := json.Unmarshal(raw, &s); err != nil {
+			return false, err
+		}
+		if s.Enabled && !s.UseExternalID {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
+// allowedSigners returns the external JWT signers with the supplied IDs or,
+// if there are none, the enabled signers that look identities up by their
+// ID: a policy that names no signer allows them all.
+func allowedSigners(ctx context.Context, api *client.Client, ids []string) ([]json.RawMessage, error) {
+	if len(ids) == 0 {
+		return api.Find(ctx, "external-jwt-signers", "enabled = true and useExternalId = false")
+	}
+	signers := make([]json.RawMessage, 0, len(ids))
+	for _, id := range ids {
+		raw, err := api.Get(ctx, "external-jwt-signers", id)
+		if client.IsNotFound(err) {
+			continue
+		}
+		if err != nil {
+			return nil, err
+		}
+		signers = append(signers, raw)
+	}
+	return signers, nil
 }
