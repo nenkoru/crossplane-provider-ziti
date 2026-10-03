@@ -196,7 +196,7 @@ func FuzzServiceRoundTrip(f *testing.F) {
 			p.MaxIdleTimeMillis = ptr.To(int64(g.intn(4)) * 30000)
 		}
 		if g.bool() {
-			p.TerminatorStrategy = ptr.To(v1alpha1.TerminatorStrategy(g.pick("smartrouting", "weighted", "random", "ha")))
+			p.TerminatorStrategy = ptr.To(v1alpha1.TerminatorStrategy(g.pick("smartrouting", "weighted", "random", "sticky")))
 		}
 		roundTrip(t, srv, service.Kind, &v1alpha1.Service{ObjectMeta: meta1("web-service"), Spec: v1alpha1.ServiceSpec{ForProvider: p}})
 	})

@@ -92,10 +92,10 @@ More manifests of the kind: [`examples/scenarios/configs.yaml`](../../examples/s
 | `allowedProtocols` | list of strings |  | `data.allowedProtocols` | AllowedProtocols are the protocols forwardProtocol may connect with: tcp, udp. |
 | `allowedSourceAddresses` | list of strings |  | `data.allowedSourceAddresses` | AllowedSourceAddresses are the addresses the hosting tunneler may connect from when the intercept config of the service sets sourceIp. |
 | `forwardAddress` | boolean |  | `data.forwardAddress` | ForwardAddress connects to the address the client asked for, if allowedAddresses has it. |
-| `forwardAddressTranslations` | list of objects |  | `data.forwardAddressTranslations` | ForwardAddressTranslations move the address the client asked for into another range before the hosting tunneler connects. |
-| `forwardAddressTranslations[].from` | string, required |  | `data.forwardAddressTranslations[].from` | From is the range of addresses clients ask for, in CIDR notation. |
-| `forwardAddressTranslations[].prefixLength` | integer, required |  | `data.forwardAddressTranslations[].prefixLength` | PrefixLength is the length of the prefix that is replaced: the bits after it are kept. |
-| `forwardAddressTranslations[].to` | string, required |  | `data.forwardAddressTranslations[].to` | To is the range the hosting tunneler connects to instead, in CIDR notation. |
+| `forwardAddressTranslations` | list of objects |  | `data.forwardAddressTranslations` | ForwardAddressTranslations move the address the client asked for into another range before the hosting tunneler connects. They apply when forwardAddress is true. |
+| `forwardAddressTranslations[].from` | string, required |  | `data.forwardAddressTranslations[].from` | From is the first address of the range clients ask for, as a single IPv4 or IPv6 address without a prefix length, such as 10.0.0.0. Ziti refuses CIDR notation here: prefixLength gives the size of the range. |
+| `forwardAddressTranslations[].prefixLength` | integer, required |  | `data.forwardAddressTranslations[].prefixLength` | PrefixLength is the length of the prefix of from that is replaced by the prefix of to: the bits after it are kept. At most 32 for IPv4 and 128 for IPv6. From 0 to 128. |
+| `forwardAddressTranslations[].to` | string, required |  | `data.forwardAddressTranslations[].to` | To is the first address of the range the hosting tunneler connects to instead, as a single address of the same family as from, such as 192.168.0.0. |
 | `forwardPort` | boolean |  | `data.forwardPort` | ForwardPort connects to the port the client asked for, if allowedPortRanges has it. |
 | `forwardProtocol` | boolean |  | `data.forwardProtocol` | ForwardProtocol connects with the protocol the client used, if allowedProtocols has it. |
 | `httpChecks` | list of objects |  | `data.httpChecks` | HTTPChecks are health checks the hosting tunneler makes with HTTP requests. Their actions change how its terminator is offered. |
@@ -154,9 +154,9 @@ in [Concepts](../concepts.md).
 | `createdAt` | string | As Ziti reports it. |
 | `forwardAddress` | boolean | As Ziti reports it. |
 | `forwardAddressTranslations` | list of objects | As Ziti reports it. |
-| `forwardAddressTranslations[].from` | string | From is the range of addresses clients ask for, in CIDR notation. |
-| `forwardAddressTranslations[].prefixLength` | integer | PrefixLength is the length of the prefix that is replaced: the bits after it are kept. |
-| `forwardAddressTranslations[].to` | string | To is the range the hosting tunneler connects to instead, in CIDR notation. |
+| `forwardAddressTranslations[].from` | string | From is the first address of the range clients ask for, as a single IPv4 or IPv6 address without a prefix length, such as 10.0.0.0. Ziti refuses CIDR notation here: prefixLength gives the size of the range. |
+| `forwardAddressTranslations[].prefixLength` | integer | PrefixLength is the length of the prefix of from that is replaced by the prefix of to: the bits after it are kept. At most 32 for IPv4 and 128 for IPv6. From 0 to 128. |
+| `forwardAddressTranslations[].to` | string | To is the first address of the range the hosting tunneler connects to instead, as a single address of the same family as from, such as 192.168.0.0. |
 | `forwardPort` | boolean | As Ziti reports it. |
 | `forwardProtocol` | boolean | As Ziti reports it. |
 | `httpChecks` | list of objects | As Ziti reports it. |

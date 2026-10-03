@@ -106,13 +106,14 @@ spec:
                     description: |-
                       TerminatorStrategy says which of the terminators that host the service
                       gets a new connection: smartrouting takes the one with the cheapest
-                      route, weighted and random spread the connections, ha keeps to one and
-                      fails over to the others.
+                      route, weighted and random spread the connections, sticky chooses like
+                      smartrouting and keeps a client on the terminator it got first while
+                      that terminator is available.
                     enum:
                     - smartrouting
                     - weighted
                     - random
-                    - ha
+                    - sticky
                     type: string
                 required:
                 - name

@@ -31,7 +31,7 @@ resources a published service takes, with Crossplane. See its
 | `service/minimal.yaml` | A service with a host config. |
 | `service/service.yaml` | A service with a host and an intercept config. |
 | `service/advanced.yaml` | Every setting of the host and intercept configs. |
-| `service/ha.yaml` | A service with the `ha` terminator strategy. |
+| `service/sticky.yaml` | A service with the `sticky` terminator strategy. |
 | `service/hostv2.yaml` | A service hosted at two destinations with a `host.v2` config. |
 | `identity/identity.yaml` | Identities whose enrollment token is written to a Secret. |
 | `identity/ca.yaml` | An identity that enrolls with a certificate of a third-party CA. |

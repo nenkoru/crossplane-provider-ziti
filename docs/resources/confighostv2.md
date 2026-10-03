@@ -57,10 +57,10 @@ More manifests of the kind: [`examples/service/hostv2.yaml`](../../examples/serv
 | `terminators[].allowedProtocols` | list of strings |  | `data.terminators[].allowedProtocols` | AllowedProtocols are the protocols forwardProtocol may connect with: tcp, udp. |
 | `terminators[].allowedSourceAddresses` | list of strings |  | `data.terminators[].allowedSourceAddresses` | AllowedSourceAddresses are the addresses the hosting tunneler may connect from when the intercept config of the service sets sourceIp. |
 | `terminators[].forwardAddress` | boolean |  | `data.terminators[].forwardAddress` | ForwardAddress connects to the address the client asked for, if allowedAddresses has it. |
-| `terminators[].forwardAddressTranslations` | list of objects |  | `data.terminators[].forwardAddressTranslations` | ForwardAddressTranslations move the address the client asked for into another range before the hosting tunneler connects. |
-| `terminators[].forwardAddressTranslations[].from` | string, required |  | `data.terminators[].forwardAddressTranslations[].from` | From is the range of addresses clients ask for, in CIDR notation. |
-| `terminators[].forwardAddressTranslations[].prefixLength` | integer, required |  | `data.terminators[].forwardAddressTranslations[].prefixLength` | PrefixLength is the length of the prefix that is replaced: the bits after it are kept. |
-| `terminators[].forwardAddressTranslations[].to` | string, required |  | `data.terminators[].forwardAddressTranslations[].to` | To is the range the hosting tunneler connects to instead, in CIDR notation. |
+| `terminators[].forwardAddressTranslations` | list of objects |  | `data.terminators[].forwardAddressTranslations` | ForwardAddressTranslations move the address the client asked for into another range before the hosting tunneler connects. They apply when forwardAddress is true. |
+| `terminators[].forwardAddressTranslations[].from` | string, required |  | `data.terminators[].forwardAddressTranslations[].from` | From is the first address of the range clients ask for, as a single IPv4 or IPv6 address without a prefix length, such as 10.0.0.0. Ziti refuses CIDR notation here: prefixLength gives the size of the range. |
+| `terminators[].forwardAddressTranslations[].prefixLength` | integer, required |  | `data.terminators[].forwardAddressTranslations[].prefixLength` | PrefixLength is the length of the prefix of from that is replaced by the prefix of to: the bits after it are kept. At most 32 for IPv4 and 128 for IPv6. From 0 to 128. |
+| `terminators[].forwardAddressTranslations[].to` | string, required |  | `data.terminators[].forwardAddressTranslations[].to` | To is the first address of the range the hosting tunneler connects to instead, as a single address of the same family as from, such as 192.168.0.0. |
 | `terminators[].forwardPort` | boolean |  | `data.terminators[].forwardPort` | ForwardPort connects to the port the client asked for, if allowedPortRanges has it. |
 | `terminators[].forwardProtocol` | boolean |  | `data.terminators[].forwardProtocol` | ForwardProtocol connects with the protocol the client used, if allowedProtocols has it. |
 | `terminators[].httpChecks` | list of objects |  | `data.terminators[].httpChecks` | HTTPChecks are health checks the hosting tunneler makes with HTTP requests. Their actions change how its terminator is offered. |
@@ -121,10 +121,10 @@ in [Concepts](../concepts.md).
 | `terminators[].allowedProtocols` | list of strings | AllowedProtocols are the protocols forwardProtocol may connect with: tcp, udp. |
 | `terminators[].allowedSourceAddresses` | list of strings | AllowedSourceAddresses are the addresses the hosting tunneler may connect from when the intercept config of the service sets sourceIp. |
 | `terminators[].forwardAddress` | boolean | ForwardAddress connects to the address the client asked for, if allowedAddresses has it. |
-| `terminators[].forwardAddressTranslations` | list of objects | ForwardAddressTranslations move the address the client asked for into another range before the hosting tunneler connects. |
-| `terminators[].forwardAddressTranslations[].from` | string | From is the range of addresses clients ask for, in CIDR notation. |
-| `terminators[].forwardAddressTranslations[].prefixLength` | integer | PrefixLength is the length of the prefix that is replaced: the bits after it are kept. |
-| `terminators[].forwardAddressTranslations[].to` | string | To is the range the hosting tunneler connects to instead, in CIDR notation. |
+| `terminators[].forwardAddressTranslations` | list of objects | ForwardAddressTranslations move the address the client asked for into another range before the hosting tunneler connects. They apply when forwardAddress is true. |
+| `terminators[].forwardAddressTranslations[].from` | string | From is the first address of the range clients ask for, as a single IPv4 or IPv6 address without a prefix length, such as 10.0.0.0. Ziti refuses CIDR notation here: prefixLength gives the size of the range. |
+| `terminators[].forwardAddressTranslations[].prefixLength` | integer | PrefixLength is the length of the prefix of from that is replaced by the prefix of to: the bits after it are kept. At most 32 for IPv4 and 128 for IPv6. From 0 to 128. |
+| `terminators[].forwardAddressTranslations[].to` | string | To is the first address of the range the hosting tunneler connects to instead, as a single address of the same family as from, such as 192.168.0.0. |
 | `terminators[].forwardPort` | boolean | ForwardPort connects to the port the client asked for, if allowedPortRanges has it. |
 | `terminators[].forwardProtocol` | boolean | ForwardProtocol connects with the protocol the client used, if allowedProtocols has it. |
 | `terminators[].httpChecks` | list of objects | HTTPChecks are health checks the hosting tunneler makes with HTTP requests. Their actions change how its terminator is offered. |
