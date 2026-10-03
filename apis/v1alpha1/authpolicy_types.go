@@ -117,7 +117,8 @@ type AuthPolicyObservation struct {
 	UpdatedAt string            `json:"updatedAt,omitempty"`
 }
 
-// AuthPolicy is the top level Ziti Auth Policy resource.
+// AuthPolicy is a Ziti auth policy: it says with which methods the identities
+// it is assigned to may authenticate, and which second factor they need.
 // +kubebuilder:object:root=true
 // +kubebuilder:subresource:status
 // +kubebuilder:printcolumn:name="NAME",type="string",JSONPath=`.spec.forProvider.name`

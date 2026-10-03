@@ -42,11 +42,13 @@ type ServicePolicyParameters struct {
 	// Name of the policy.
 	Name string `json:"name"`
 
-	// Type is the type of policy (Dial or Bind).
+	// Type says what the policy grants: Dial lets the identities connect to
+	// the services, Bind lets them host the services.
 	// +kubebuilder:validation:Enum=Dial;Bind
 	Type ServicePolicyType `json:"type"`
 
-	// Semantic is the matching semantic (AnyOf or AllOf).
+	// Semantic says how the "#attribute" selectors of one list combine: AnyOf
+	// selects what has any of the attributes, AllOf what has all of them.
 	// +optional
 	// +kubebuilder:default=AllOf
 	// +kubebuilder:validation:Enum=AnyOf;AllOf
@@ -89,7 +91,8 @@ type ServicePolicyObservation struct {
 	UpdatedAt         string            `json:"updatedAt,omitempty"`
 }
 
-// ServicePolicy is the Schema for the ServicePolicies API.
+// ServicePolicy is a Ziti service policy: it lets identities dial or host
+// services, and may require that their devices pass posture checks.
 // +kubebuilder:object:root=true
 // +kubebuilder:subresource:status
 // +kubebuilder:printcolumn:name="NAME",type=string,JSONPath=`.spec.forProvider.name`

@@ -7,9 +7,9 @@ import (
 
 // PortRange defines a range of ports.
 type PortRange struct {
-	// Low is the low port number.
+	// Low is the first port of the range.
 	Low int32 `json:"low"`
-	// High is the high port number.
+	// High is the last port of the range.
 	High int32 `json:"high"`
 }
 
@@ -30,20 +30,24 @@ type ConfigInterceptV1Parameters struct {
 	// Name of the config.
 	Name string `json:"name"`
 
-	// Addresses is a list of domain addresses to intercept.
+	// Addresses are the host names, IP addresses and CIDR ranges the tunnelers
+	// of clients intercept. A name that starts with "*." stands for a whole
+	// domain.
 	Addresses []string `json:"addresses"`
 
-	// Protocols is a list of protocols to intercept (tcp, udp).
+	// Protocols the tunnelers of clients intercept: tcp, udp.
 	Protocols []string `json:"protocols"`
 
-	// PortRanges is a list of port ranges to intercept.
+	// PortRanges are the ports the tunnelers of clients intercept.
 	PortRanges []PortRange `json:"portRanges"`
 
-	// DialOptions is the dial options for the intercepted connection.
+	// DialOptions say how the tunnelers of clients dial the service.
 	// +optional
 	DialOptions *DialOptions `json:"dialOptions,omitempty"`
 
-	// SourceIP is the source IP to use for the intercepted connection.
+	// SourceIP is the address the hosting tunneler connects from, for a
+	// destination that must see where the client is. The host config of the
+	// service must allow it in allowedSourceAddresses.
 	// +optional
 	SourceIP string `json:"sourceIp,omitempty"`
 
@@ -54,10 +58,12 @@ type ConfigInterceptV1Parameters struct {
 
 // DialOptions defines dial options for intercepted connections.
 type DialOptions struct {
-	// ConnectTimeoutSeconds is the connection timeout in seconds.
+	// ConnectTimeoutSeconds is how long the tunneler of a client waits for the
+	// service to accept a connection.
 	// +optional
 	ConnectTimeoutSeconds *int32 `json:"connectTimeoutSeconds,omitempty"`
-	// Identity is the identity to use for dialing.
+	// Identity is the name of the hosting identity to dial, for a service
+	// whose hosts set listenOptions.bindUsingEdgeIdentity.
 	// +optional
 	Identity *string `json:"identity,omitempty"`
 }
@@ -76,7 +82,8 @@ type ConfigInterceptV1Observation struct {
 	UpdatedAt   string            `json:"updatedAt,omitempty"`
 }
 
-// ConfigInterceptV1 is the Schema for the ConfigInterceptV1s API.
+// ConfigInterceptV1 is a Ziti config of type intercept.v1: the addresses and
+// ports the tunnelers of clients intercept for a service.
 // +kubebuilder:object:root=true
 // +kubebuilder:subresource:status
 // +kubebuilder:printcolumn:name="NAME",type=string,JSONPath=`.spec.forProvider.name`

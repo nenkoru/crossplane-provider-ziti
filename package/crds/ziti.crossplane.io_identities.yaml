@@ -115,7 +115,9 @@ spec:
                     description: Name of the identity.
                     type: string
                   roleAttributes:
-                    description: RoleAttributes for the identity.
+                    description: |-
+                      RoleAttributes are the attributes policies select the identity by, as
+                      "#attribute".
                     items:
                       type: string
                     type: array

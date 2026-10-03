@@ -1,7 +1,28 @@
 # Examples
 
-One directory per kind. Every manifest is validated against the CRD of its
-kind by `go test ./apis/...`.
+Scenarios that belong together, a Composition, and one directory per kind.
+Every manifest of a kind of the provider is validated against its CRD by
+`go test ./apis/...`, and the end-to-end test applies them to a real OpenZiti
+controller. The [documentation](../docs/README.md) has a page per kind with
+all settings.
+
+## Scenarios
+
+Each file is complete: apply it after a `ProviderConfig` and it works.
+
+| Path | What it does |
+|------|--------------|
+| `scenarios/publish-service.yaml` | Publishes a service: host and intercept configs, the service, a Dial and a Bind policy, a client identity and a hosting identity with their enrollment tokens. The [quick start](../docs/quickstart.md) walks through it. |
+| `scenarios/edge-router.yaml` | Adds an edge router with its enrollment token, lets every identity use the routers of its site, and makes the databases available on them. |
+| `scenarios/configs.yaml` | Intercept and host configs for the usual cases: one name and port, a whole subnet with the address, port and protocol forwarded, a wildcard domain with a health check, and two destinations with a `host.v2` config. |
+
+## Composition
+
+[`composition/`](composition) turns one `PublishedService` into the six
+resources a published service takes, with Crossplane. See its
+[README](composition/README.md).
+
+## Per kind
 
 | Path | What it shows |
 |------|---------------|
@@ -28,7 +49,8 @@ kind by `go test ./apis/...`.
 
 ## Trying them
 
-Edit `provider/config.yaml` to point at your Ziti controller, then:
+Run the provider as the [quick start](../docs/quickstart.md) describes, edit
+`provider/config.yaml` to point at your Ziti controller, then:
 
 ```shell
 kubectl apply -f examples/provider/config.yaml

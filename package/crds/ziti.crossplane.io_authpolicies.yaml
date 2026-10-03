@@ -34,7 +34,9 @@ spec:
     name: v1alpha1
     schema:
       openAPIV3Schema:
-        description: AuthPolicy is the top level Ziti Auth Policy resource.
+        description: |-
+          AuthPolicy is a Ziti auth policy: it says with which methods the identities
+          it is assigned to may authenticate, and which second factor they need.
         properties:
           apiVersion:
             description: |-

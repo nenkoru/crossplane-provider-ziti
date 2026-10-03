@@ -34,7 +34,9 @@ spec:
     name: v1alpha1
     schema:
       openAPIV3Schema:
-        description: ConfigInterceptV1 is the Schema for the ConfigInterceptV1s API.
+        description: |-
+          ConfigInterceptV1 is a Ziti config of type intercept.v1: the addresses and
+          ports the tunnelers of clients intercept for a service.
         properties:
           apiVersion:
             description: |-
@@ -62,37 +64,44 @@ spec:
                   of a Ziti Intercept V1 Config.
                 properties:
                   addresses:
-                    description: Addresses is a list of domain addresses to intercept.
+                    description: |-
+                      Addresses are the host names, IP addresses and CIDR ranges the tunnelers
+                      of clients intercept. A name that starts with "*." stands for a whole
+                      domain.
                     items:
                       type: string
                     type: array
                   dialOptions:
-                    description: DialOptions is the dial options for the intercepted
-                      connection.
+                    description: DialOptions say how the tunnelers of clients dial
+                      the service.
                     properties:
                       connectTimeoutSeconds:
-                        description: ConnectTimeoutSeconds is the connection timeout
-                          in seconds.
+                        description: |-
+                          ConnectTimeoutSeconds is how long the tunneler of a client waits for the
+                          service to accept a connection.
                         format: int32
                         type: integer
                       identity:
-                        description: Identity is the identity to use for dialing.
+                        description: |-
+                          Identity is the name of the hosting identity to dial, for a service
+                          whose hosts set listenOptions.bindUsingEdgeIdentity.
                         type: string
                     type: object
                   name:
                     description: Name of the config.
                     type: string
                   portRanges:
-                    description: PortRanges is a list of port ranges to intercept.
+                    description: PortRanges are the ports the tunnelers of clients
+                      intercept.
                     items:
                       description: PortRange defines a range of ports.
                       properties:
                         high:
-                          description: High is the high port number.
+                          description: High is the last port of the range.
                           format: int32
                           type: integer
                         low:
-                          description: Low is the low port number.
+                          description: Low is the first port of the range.
                           format: int32
                           type: integer
                       required:
@@ -101,14 +110,16 @@ spec:
                       type: object
                     type: array
                   protocols:
-                    description: Protocols is a list of protocols to intercept (tcp,
-                      udp).
+                    description: 'Protocols the tunnelers of clients intercept: tcp,
+                      udp.'
                     items:
                       type: string
                     type: array
                   sourceIp:
-                    description: SourceIP is the source IP to use for the intercepted
-                      connection.
+                    description: |-
+                      SourceIP is the address the hosting tunneler connects from, for a
+                      destination that must see where the client is. The host config of the
+                      service must allow it in allowedSourceAddresses.
                     type: string
                   tags:
                     additionalProperties:
@@ -198,12 +209,15 @@ spec:
                       connections.
                     properties:
                       connectTimeoutSeconds:
-                        description: ConnectTimeoutSeconds is the connection timeout
-                          in seconds.
+                        description: |-
+                          ConnectTimeoutSeconds is how long the tunneler of a client waits for the
+                          service to accept a connection.
                         format: int32
                         type: integer
                       identity:
-                        description: Identity is the identity to use for dialing.
+                        description: |-
+                          Identity is the name of the hosting identity to dial, for a service
+                          whose hosts set listenOptions.bindUsingEdgeIdentity.
                         type: string
                     type: object
                   id:
@@ -215,11 +229,11 @@ spec:
                       description: PortRange defines a range of ports.
                       properties:
                         high:
-                          description: High is the high port number.
+                          description: High is the last port of the range.
                           format: int32
                           type: integer
                         low:
-                          description: Low is the low port number.
+                          description: Low is the first port of the range.
                           format: int32
                           type: integer
                       required:

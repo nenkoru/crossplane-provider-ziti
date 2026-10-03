@@ -1,0 +1,25 @@
+# Values of the vcluster chart for the test bed. The virtual cluster creates
+# only namespaced objects in the host cluster: no ClusterRole, no CRDs and no
+# persistent volumes. Its state is lost when its pod restarts, which is what a
+# test bed wants.
+rbac:
+  clusterRole:
+    enabled: false
+telemetry:
+  enabled: false
+controlPlane:
+  statefulSet:
+    image:
+      repository: loft-sh/vcluster-oss
+    persistence:
+      volumeClaim:
+        enabled: false
+    resources:
+      requests: {cpu: 200m, memory: 512Mi, ephemeral-storage: 1Gi}
+      limits: {cpu: "1", memory: 1536Mi, ephemeral-storage: 4Gi}
+  # Crossplane finds its functions through the DNS of the virtual cluster.
+  coredns:
+    deployment:
+      resources:
+        requests: {cpu: 20m, memory: 64Mi}
+        limits: {cpu: 200m, memory: 170Mi}

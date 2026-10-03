@@ -34,8 +34,9 @@ spec:
     name: v1alpha1
     schema:
       openAPIV3Schema:
-        description: ServiceEdgeRouterPolicy is the Schema for the ServiceEdgeRouterPolicies
-          API.
+        description: |-
+          ServiceEdgeRouterPolicy is a Ziti service edge router policy: it says
+          through which edge routers a service can be reached.
         properties:
           apiVersion:
             description: |-
@@ -75,7 +76,9 @@ spec:
                     type: string
                   semantic:
                     default: AllOf
-                    description: Semantic is the matching semantic (AnyOf or AllOf).
+                    description: |-
+                      Semantic says how the "#attribute" selectors of one list combine: AnyOf
+                      selects what has any of the attributes, AllOf what has all of them.
                     enum:
                     - AnyOf
                     - AllOf

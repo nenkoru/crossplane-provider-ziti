@@ -1,0 +1,216 @@
+# Intercept and host configs for the cases that come up most often.
+#
+# A service gets at most one config of each type: one intercept.v1 and one of
+# host.v1 or host.v2.
+
+# 1. One name, one port: clients open app.ziti:443, the hosting tunneler
+#    connects to 10.0.0.10:8443.
+apiVersion: ziti.crossplane.io/v1alpha1
+kind: ConfigInterceptV1
+metadata:
+  name: app-intercept
+spec:
+  providerConfigRef:
+    kind: ProviderConfig
+    name: default
+  forProvider:
+    name: app-intercept
+    addresses:
+      - app.ziti
+    protocols:
+      - tcp
+    portRanges:
+      - low: 443
+        high: 443
+---
+apiVersion: ziti.crossplane.io/v1alpha1
+kind: ConfigHostV1
+metadata:
+  name: app-host
+spec:
+  providerConfigRef:
+    kind: ProviderConfig
+    name: default
+  forProvider:
+    name: app-host
+    address: 10.0.0.10
+    port: 8443
+    protocol: tcp
+---
+# 2. A whole subnet: clients reach every address of 10.20.0.0/16 on the ports
+#    they ask for, over TCP or UDP. The hosting tunneler forwards the address,
+#    the port and the protocol the client used, within what is allowed here.
+apiVersion: ziti.crossplane.io/v1alpha1
+kind: ConfigInterceptV1
+metadata:
+  name: office-lan-intercept
+spec:
+  providerConfigRef:
+    kind: ProviderConfig
+    name: default
+  forProvider:
+    name: office-lan-intercept
+    addresses:
+      - 10.20.0.0/16
+    protocols:
+      - tcp
+      - udp
+    portRanges:
+      - low: 1
+        high: 65535
+---
+apiVersion: ziti.crossplane.io/v1alpha1
+kind: ConfigHostV1
+metadata:
+  name: office-lan-host
+spec:
+  providerConfigRef:
+    kind: ProviderConfig
+    name: default
+  forProvider:
+    name: office-lan-host
+    forwardAddress: true
+    allowedAddresses:
+      - 10.20.0.0/16
+    forwardPort: true
+    allowedPortRanges:
+      - low: 1
+        high: 65535
+    forwardProtocol: true
+    allowedProtocols:
+      - tcp
+      - udp
+---
+# 3. A wildcard domain with a health check: clients open any name under
+#    apps.ziti; the hosting tunneler connects to the ingress and stops
+#    offering the service while the ingress does not answer.
+apiVersion: ziti.crossplane.io/v1alpha1
+kind: ConfigInterceptV1
+metadata:
+  name: apps-intercept
+spec:
+  providerConfigRef:
+    kind: ProviderConfig
+    name: default
+  forProvider:
+    name: apps-intercept
+    addresses:
+      - "*.apps.ziti"
+    protocols:
+      - tcp
+    portRanges:
+      - low: 80
+        high: 80
+      - low: 443
+        high: 443
+---
+apiVersion: ziti.crossplane.io/v1alpha1
+kind: ConfigHostV1
+metadata:
+  name: apps-host
+spec:
+  providerConfigRef:
+    kind: ProviderConfig
+    name: default
+  forProvider:
+    name: apps-host
+    address: ingress.internal
+    forwardPort: true
+    allowedPortRanges:
+      - low: 80
+        high: 80
+      - low: 443
+        high: 443
+    protocol: tcp
+    portChecks:
+      - address: ingress.internal:443
+        interval: "10s"
+        timeout: "3s"
+        actions:
+          - trigger: fail
+            action: "mark unhealthy"
+            duration: "30s"
+            consecutiveEvents: 3
+          - trigger: pass
+            action: "mark healthy"
+            duration: "30s"
+---
+# 4. Two destinations behind one service, with a host.v2 config: the first is
+#    preferred, the second takes over when the first is gone.
+apiVersion: ziti.crossplane.io/v1alpha1
+kind: ConfigHostV2
+metadata:
+  name: api-hosts
+spec:
+  providerConfigRef:
+    kind: ProviderConfig
+    name: default
+  forProvider:
+    name: api-hosts
+    terminators:
+      - address: api-1.internal
+        port: 8080
+        protocol: tcp
+        listenOptions:
+          precedence: required
+      - address: api-2.internal
+        port: 8080
+        protocol: tcp
+        listenOptions:
+          precedence: default
+---
+# The services that carry the configs.
+apiVersion: ziti.crossplane.io/v1alpha1
+kind: Service
+metadata:
+  name: app
+spec:
+  providerConfigRef:
+    kind: ProviderConfig
+    name: default
+  forProvider:
+    name: app
+    configs:
+      - app-intercept
+      - app-host
+---
+apiVersion: ziti.crossplane.io/v1alpha1
+kind: Service
+metadata:
+  name: office-lan
+spec:
+  providerConfigRef:
+    kind: ProviderConfig
+    name: default
+  forProvider:
+    name: office-lan
+    configs:
+      - office-lan-intercept
+      - office-lan-host
+---
+apiVersion: ziti.crossplane.io/v1alpha1
+kind: Service
+metadata:
+  name: apps
+spec:
+  providerConfigRef:
+    kind: ProviderConfig
+    name: default
+  forProvider:
+    name: apps
+    configs:
+      - apps-intercept
+      - apps-host
+---
+apiVersion: ziti.crossplane.io/v1alpha1
+kind: Service
+metadata:
+  name: api
+spec:
+  providerConfigRef:
+    kind: ProviderConfig
+    name: default
+  forProvider:
+    name: api
+    configs:
+      - api-hosts

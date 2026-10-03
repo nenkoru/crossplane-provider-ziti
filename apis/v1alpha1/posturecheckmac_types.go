@@ -33,7 +33,8 @@ type PostureCheckMacParameters struct {
 	// keeps them as a set, so their order and duplicates do not matter.
 	// +kubebuilder:validation:MinItems=1
 	MacAddresses []HexString `json:"macAddresses"`
-	// RoleAttributes for the posture check.
+	// RoleAttributes are the attributes service policies select the posture
+	// check by, as "#attribute".
 	// +optional
 	RoleAttributes []string `json:"roleAttributes,omitempty"`
 	// Tags is a map of tags.
@@ -60,7 +61,8 @@ type PostureCheckMacObservation struct {
 	UpdatedAt      string            `json:"updatedAt,omitempty"`
 }
 
-// PostureCheckMac is the top level Ziti MAC Address Posture Check resource.
+// PostureCheckMac is a Ziti posture check that a device passes if it has one
+// of the listed MAC addresses.
 // +kubebuilder:object:root=true
 // +kubebuilder:subresource:status
 // +kubebuilder:printcolumn:name="NAME",type="string",JSONPath=`.spec.forProvider.name`

@@ -26,7 +26,8 @@ type IdentityParameters struct {
 	// +optional
 	// +kubebuilder:default=false
 	IsAdmin *bool `json:"isAdmin,omitempty"`
-	// RoleAttributes for the identity.
+	// RoleAttributes are the attributes policies select the identity by, as
+	// "#attribute".
 	// +optional
 	RoleAttributes []string `json:"roleAttributes,omitempty"`
 	// AuthPolicyID is the name or ID of the auth policy that governs how the

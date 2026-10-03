@@ -6,20 +6,31 @@
 # the manifests in examples/, checks through the Ziti Edge Management API that
 # the entities exist as declared, changes, tampers with and deletes them
 # behind the provider's back, and checks that deleting the managed resources
-# deletes the entities.
+# deletes the entities. docs/testing.md lists what is checked for every kind.
 #
 # Usage:
-#   test/e2e/e2e.sh up      # start OpenZiti, a kind cluster and the provider
-#   test/e2e/e2e.sh test    # run the test against what "up" started
-#   test/e2e/e2e.sh logs    # print diagnostics
-#   test/e2e/e2e.sh down    # stop everything "up" started
-#   test/e2e/e2e.sh all     # up, test, down
+#   test/e2e/e2e.sh up          # start OpenZiti, a kind cluster and the provider
+#   test/e2e/e2e.sh test        # run the test against what "up" started
+#   test/e2e/e2e.sh logs        # print diagnostics
+#   test/e2e/e2e.sh down        # stop everything "up" started
+#   test/e2e/e2e.sh all         # up, test, down
+#   test/e2e/e2e.sh crossplane  # install Crossplane into the cluster of the test
+#
+# E2E_ONLY runs some stages of the test instead of all of them, for example
+# E2E_ONLY="lifecycle scenarios". The stages are core, drift, extended,
+# posture_checks, authentication, renewal, lifecycle, scenarios and
+# composition.
 #
 # "test" alone runs the checks against a provider that is already running:
 # put the kubeconfig of its cluster in $E2E_WORK_DIR/kubeconfig and set
-# ZITI_URL, ZITI_USER and ZITI_PWD for the test controller.
+# ZITI_URL, ZITI_USER and ZITI_PWD for the test controller. That is how
+# test/e2e/vcluster runs the test inside a virtual cluster.
 #
-# Requires docker (with compose), kind, kubectl, go, curl, jq and openssl.
+# The Composition of examples/composition is tested when Crossplane is
+# installed in the cluster. "up" installs it if E2E_CROSSPLANE is true.
+#
+# Requires docker (with compose), kind, kubectl, go, curl, jq and openssl, and
+# helm to install Crossplane.
 
 set -euo pipefail
 
@@ -45,6 +56,9 @@ POLL="${E2E_POLL:-10s}"
 # How long entities must stay untouched to prove the provider does not update
 # them without a reason, in seconds. Must span several polls.
 SETTLE="${E2E_SETTLE:-35}"
+
+# The Crossplane release "crossplane" installs.
+CROSSPLANE_VERSION="${CROSSPLANE_VERSION:-2.4.2}"
 
 GROUP="ziti.crossplane.io"
 
@@ -89,6 +103,23 @@ AUTHENTICATION_EXAMPLES=(
 	examples/authpolicy/jwt.yaml
 	examples/identity/ca.yaml
 )
+
+# The scenarios: resources that are applied together.
+SCENARIO_EXAMPLES=(
+	examples/scenarios/publish-service.yaml
+	examples/scenarios/edge-router.yaml
+	examples/scenarios/configs.yaml
+)
+
+# The Composition with its function and its definition, and a composite
+# resource for it.
+COMPOSITION_EXAMPLES=(
+	examples/composition/function.yaml
+	examples/composition/definition.yaml
+	examples/composition/composition.yaml
+)
+COMPOSITE_EXAMPLE=examples/composition/publishedservice.yaml
+COMPOSITE="publishedservices.platform.example.org"
 
 export KUBECONFIG="${WORK}/kubeconfig"
 
@@ -365,8 +396,56 @@ mr_gone() {
 	[ -z "${found}" ]
 }
 
+# named_matches <collection> <name> <jq filter> succeeds if an entity has that
+# name and the filter is true for it.
+named_matches() {
+	local id
+	id="$(ziti_id "$1" "$2")" || return 1
+	[ -n "${id}" ] && entity_matches "$1" "${id}" "$3"
+}
+
+# listed <path of a list> <name> succeeds if the list has an entity with that
+# name.
+listed() {
+	curl -sk --fail -H "zt-session: ${ZITI_TOKEN}" --get --data-urlencode "filter=name=\"$2\"" "${ZITI_API}/$1" |
+		jq -e '.data[0].id != null'
+}
+
+# ziti_gone <collection> <name> succeeds if no entity has that name.
+ziti_gone() {
+	local id
+	id="$(ziti_id "$1" "$2")" || return 1
+	[ -z "${id}" ]
+}
+
+# has_crossplane succeeds if Crossplane is installed in the cluster.
+has_crossplane() {
+	kubectl get crd compositions.apiextensions.crossplane.io >/dev/null 2>&1
+}
+
 # ------------------------------------------------------------------------------
 # Commands
+
+crossplane() {
+	step "Installing Crossplane ${CROSSPLANE_VERSION}"
+	helm upgrade --install crossplane crossplane --repo https://charts.crossplane.io/stable \
+		--version "${CROSSPLANE_VERSION}" --namespace crossplane-system --create-namespace --wait --timeout 300s
+	# Crossplane grants itself access to the kinds of the providers it
+	# installs. The provider under test runs outside the cluster, so the test
+	# grants the access.
+	kubectl apply -f - <<EOF
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: provider-ziti-e2e:aggregate-to-crossplane
+  labels:
+    rbac.crossplane.io/aggregate-to-crossplane: "true"
+rules:
+  - apiGroups: ["${GROUP}"]
+    resources: ["*"]
+    verbs: ["*"]
+EOF
+}
 
 up() {
 	mkdir -p "${WORK}"
@@ -387,6 +466,10 @@ up() {
 	kubectl apply -f "${ROOT}/package/crds"
 	kubectl wait --for=condition=Established --timeout=60s -f "${ROOT}/package/crds"
 
+	if [ "${E2E_CROSSPLANE:-false}" = "true" ]; then
+		crossplane
+	fi
+
 	step "Starting the provider"
 	(cd "${ROOT}" && go build -o "${WORK}/provider" ./cmd/provider)
 	"${WORK}/provider" --debug --poll="${POLL}" >"${WORK}/provider.log" 2>&1 &
@@ -399,7 +482,7 @@ up() {
 	ok "provider is running (pid $(cat "${WORK}/provider.pid"), log ${WORK}/provider.log)"
 }
 
-test_core() {
+configure() {
 	step "Configuring the provider"
 	kubectl apply -f - <<EOF
 apiVersion: v1
@@ -426,7 +509,9 @@ spec:
     secretRef:
       name: ziti-credentials
 EOF
+}
 
+test_core() {
 	step "Creating the core resources"
 	apply "${CORE_EXAMPLES[@]}"
 	wait_ready "${CORE_EXAMPLES[@]}"
@@ -1013,9 +1098,9 @@ EOF
 	expect_renewed identities e2e-expired identities '.enrollment.ott.jwt' '.enrollment.ott.expiresAt' "${old}"
 
 	step "An enrollment that is gone is created anew"
-	# recreated <plural> <name> <method> deletes the enrollment of an identity
+	# enrollment_recreated <plural> <name> <method> deletes the enrollment of an identity
 	# in Ziti and checks that the identity gets another one.
-	recreated() {
+	enrollment_recreated() {
 		local plural="$1" name="$2" method="$3" id old enrollment
 		id="$(mr_id "${plural}" "${name}")"
 		old="$(token_digest "${name}-enrollment")" || fail "cannot read secret/${name}-enrollment"
@@ -1025,9 +1110,9 @@ EOF
 			".enrollment.${method}.id != null and .enrollment.${method}.id != \"${enrollment}\""
 		expect_renewed "${plural}" "${name}" identities ".enrollment.${method}.jwt" ".enrollment.${method}.expiresAt" "${old}"
 	}
-	recreated identities e2e-deleted ott
-	recreated identitycas e2e-deleted-ca ottca
-	recreated identityupdbs e2e-deleted-updb updb
+	enrollment_recreated identities e2e-deleted ott
+	enrollment_recreated identitycas e2e-deleted-ca ottca
+	enrollment_recreated identityupdbs e2e-deleted-updb updb
 	expires_in identities "${deleted}" '.enrollment.ott.expiresAt' 10200 10800 >/dev/null ||
 		fail "the new enrollment of e2e-deleted is not valid for 180 minutes"
 	ok "identities/e2e-deleted: the new token is valid for 180 minutes"
@@ -1299,8 +1384,374 @@ EOF
 	expect_gone "OS posture check listed out of order is gone" posture-checks e2e-os-out-of-order
 }
 
+# test_lifecycle takes a resource of every kind through what the tests above
+# show for some of them: a change made to its entity in Ziti is reverted, an
+# entity that is deleted in Ziti is created anew under a new ID, what refers
+# to it by name follows the new ID, a new enrollment token reaches the
+# connection secret, nothing is updated once it is settled, and deleting the
+# resource deletes the entity.
+test_lifecycle() {
+	local plurals=() names=() collections=() changes=() filters=()
+	# row <plural> <name> <collection> <change to make in Ziti> <jq filter that
+	# is true for the entity as declared>
+	row() {
+		plurals+=("$1")
+		names+=("$2")
+		collections+=("$3")
+		changes+=("$4")
+		filters+=("$5")
+	}
+	row services web-service services '{"roleAttributes": ["tampered"]}' \
+		'(.roleAttributes | sort) == ["role:api", "role:web"] and (.configs | length) == 2'
+	row confighostv1s web-service-host configs '{"data": {"address": "tampered.local", "port": 9999, "protocol": "udp"}}' \
+		'.data.address == "web-service.local" and .data.port == 8080 and .data.protocol == "tcp"'
+	row configinterceptv1s web-service-intercept configs \
+		'{"data": {"addresses": ["tampered.example.com"], "protocols": ["tcp"], "portRanges": [{"low": 1, "high": 1}]}}' \
+		'.data.addresses == ["web.example.com", "api.example.com"] and (.data.portRanges | length) == 2'
+	row confighostv2s web-hosts configs '{"data": {"terminators": [{"address": "tampered.internal", "port": 1, "protocol": "tcp"}]}}' \
+		'(.data.terminators | length) == 2 and .data.terminators[0].address == "web-1.internal"'
+	row servicepolicies web-service-dial service-policies '{"semantic": "AllOf", "identityRoles": ["#tampered"]}' \
+		'.type == "Dial" and .semantic == "AnyOf" and .identityRoles == ["#web-clients"]'
+	row servicepolicies web-service-bind service-policies '{"serviceRoles": ["#tampered"]}' \
+		'.type == "Bind" and .serviceRoles == ["#role:web"]'
+	row edgerouterpolicies web-clients-public-routers edge-router-policies '{"edgeRouterRoles": ["#tampered"]}' \
+		'.edgeRouterRoles == ["#public"] and (.identityRoles | sort) == ["#web-clients", "#web-servers"]'
+	row serviceedgerouterpolicies web-services-public-routers service-edge-router-policies '{"edgeRouterRoles": ["#tampered"]}' \
+		'.edgeRouterRoles == ["#public"] and .serviceRoles == ["#role:web"]'
+	row edgerouters public-router edge-routers '{"roleAttributes": ["tampered"]}' '.roleAttributes == ["public"]'
+	row identities web-client identities '{"roleAttributes": ["tampered"]}' '.roleAttributes == ["web-clients"]'
+	row identities web-server identities '{"roleAttributes": ["tampered"]}' '.roleAttributes == ["web-servers"]'
+	row identitycas sensor identities '{"roleAttributes": ["tampered"]}' '.roleAttributes == ["sensors"]'
+	row identityupdbs operator identities '{"roleAttributes": ["tampered"]}' '.roleAttributes == ["operators"]'
+	row identitynones sso-user identities '{"roleAttributes": ["tampered"], "externalId": "tampered@example.com"}' \
+		'.roleAttributes == ["web-clients"] and .externalId == "sso-user@example.com"'
+	# Ziti wants the type of a posture check along with a change.
+	row posturecheckoses supported-os posture-checks '{"typeId": "OS", "operatingSystems": [{"type": "Linux", "versions": [">=1.0.0"]}]}' \
+		'.typeId == "OS" and (.operatingSystems | length) == 2'
+	row posturecheckmfas mfa posture-checks '{"typeId": "MFA", "timeoutSeconds": 60}' \
+		'.typeId == "MFA" and .timeoutSeconds == 3600 and .promptOnWake == true'
+	row posturecheckdomains corporate-domain posture-checks '{"typeId": "DOMAIN", "domains": ["tampered.example.com"]}' \
+		'.typeId == "DOMAIN" and .domains == ["branch.example.com", "corp.example.com"]'
+	row posturecheckmacs registered-devices posture-checks '{"typeId": "MAC", "macAddresses": ["ff:ff:ff:ff:ff:ff"]}' \
+		'.typeId == "MAC" and .macAddresses == ["001a2b3c4d5e", "0a1b2c3d4e5f"]'
+	row posturecheckprocesses windows-agent posture-checks \
+		'{"typeId": "PROCESS", "process": {"osType": "Linux", "path": "/tampered", "hashes": ["ff"], "signerFingerprint": "ff"}}' \
+		'.typeId == "PROCESS" and .process.osType == "Windows" and (.process.hashes | length) == 1'
+	row posturecheckmultiprocesses endpoint-agents posture-checks \
+		'{"typeId": "PROCESS_MULTI", "semantic": "AllOf", "processes": [{"osType": "Linux", "path": "/tampered", "hashes": ["ff"], "signerFingerprints": ["ff"]}]}' \
+		'.typeId == "PROCESS_MULTI" and .semantic == "AnyOf" and (.processes | length) == 2'
+	row authpolicies certificates-and-totp auth-policies '{"tags": {"tampered": "yes"}}' \
+		'.primary.cert.allowed == true and .secondary.requireTotp == true and .tags == {"team": "platform"}'
+	# The auth policy comes right before the signer it refers to: Ziti keeps a
+	# signer that an auth policy refers to.
+	row authpolicies corporate-sso-only auth-policies '{"primary": {"extJwt": {"allowedSigners": []}}}' \
+		'.primary.extJwt.allowed == true and (.primary.extJwt.allowedSigners | length) == 1'
+	row externaljwtsigners corporate-sso external-jwt-signers '{"audience": "tampered"}' '.audience == "ziti" and .enabled == true'
+	row certificateauthorities device-ca cas '{"isOttCaEnrollmentEnabled": false}' \
+		'.isOttCaEnrollmentEnabled == true and .isAuthEnabled == true'
+
+	local examples=(
+		"${CORE_EXAMPLES[@]}" "${EXTENDED_EXAMPLES[@]}" "${POSTURE_CHECK_EXAMPLES[@]}"
+		examples/externaljwtsigner/externaljwtsigner.yaml examples/authpolicy/jwt.yaml
+	)
+
+	step "Creating a resource of every kind"
+	openssl req -x509 -newkey rsa:2048 -nodes -days 1 -subj '/CN=provider-ziti e2e lifecycle CA' \
+		-keyout "${WORK}/lifecycle-ca.key" -out "${WORK}/lifecycle-ca.crt" 2>/dev/null || fail "cannot create a CA certificate"
+	apply_ca "${WORK}/lifecycle-ca.crt"
+	apply "${examples[@]}"
+	kubectl wait --for=condition=Ready --timeout="${TIMEOUT}s" "certificateauthorities.${GROUP}/device-ca"
+	wait_ready "${examples[@]}"
+
+	local i id ids=()
+	for i in "${!plurals[@]}"; do
+		id="$(mr_id "${plurals[$i]}" "${names[$i]}")"
+		[ -n "${id}" ] || fail "${plurals[$i]}/${names[$i]} has no Ziti ID"
+		entity_matches "${collections[$i]}" "${id}" "${filters[$i]}" >/dev/null ||
+			fail "${plurals[$i]}/${names[$i]}: Ziti entity does not satisfy: ${filters[$i]}"
+		ids+=("${id}")
+	done
+	ok "${#ids[@]} resources of $(printf '%s\n' "${plurals[@]}" | sort -u | wc -l | tr -d ' ') kinds are in Ziti as declared"
+
+	step "A change made in Ziti to an entity of every kind is reverted"
+	for i in "${!plurals[@]}"; do
+		ziti_patch "${collections[$i]}" "${ids[$i]}" "${changes[$i]}" || fail "cannot change ${plurals[$i]}/${names[$i]} in Ziti"
+		if entity_matches "${collections[$i]}" "${ids[$i]}" "${filters[$i]}" >/dev/null; then
+			fail "could not tamper with ${plurals[$i]}/${names[$i]}"
+		fi
+	done
+	for i in "${!plurals[@]}"; do
+		eventually "${plurals[$i]}/${names[$i]}: the change is reverted" entity_matches "${collections[$i]}" "${ids[$i]}" "${filters[$i]}"
+		expect "${plurals[$i]}/${names[$i]}: keeps its Ziti ID" "$(mr_id "${plurals[$i]}" "${names[$i]}")" "${ids[$i]}"
+	done
+
+	step "An entity of every kind that is deleted in Ziti is created anew"
+	local client server sensor operator router attempt
+	client="$(token_digest web-client-enrollment)" || fail "cannot read secret/web-client-enrollment"
+	server="$(token_digest web-server-enrollment)" || fail "cannot read secret/web-server-enrollment"
+	sensor="$(token_digest sensor-enrollment)" || fail "cannot read secret/sensor-enrollment"
+	operator="$(token_digest operator-enrollment)" || fail "cannot read secret/operator-enrollment"
+	router="$(token_digest public-router-enrollment)" || fail "cannot read secret/public-router-enrollment"
+	for i in "${!plurals[@]}"; do
+		attempt=0
+		until ziti_delete "${collections[$i]}" "${ids[$i]}"; do
+			# Only the signer may be kept: the provider was quick enough to
+			# create the auth policy anew, which refers to it again.
+			attempt=$((attempt + 1))
+			[ "${plurals[$i]}" = externaljwtsigners ] && [ "${attempt}" -le 5 ] ||
+				fail "cannot delete ${plurals[$i]}/${names[$i]} in Ziti"
+			ziti_delete auth-policies "$(ziti_id auth-policies corporate-sso-only)" || true
+		done
+	done
+	for i in "${!plurals[@]}"; do
+		eventually "${plurals[$i]}/${names[$i]}: created anew under a new ID" \
+			recreated "${plurals[$i]}" "${names[$i]}" "${collections[$i]}" "${ids[$i]}"
+	done
+	# What refers to an entity that is created later settles a poll later.
+	for i in "${!plurals[@]}"; do
+		ids[i]="$(mr_id "${plurals[$i]}" "${names[$i]}")"
+		eventually "${plurals[$i]}/${names[$i]}: the new entity is as declared" \
+			entity_matches "${collections[$i]}" "${ids[$i]}" "${filters[$i]}"
+	done
+	kubectl wait --for=condition=Ready --timeout="${TIMEOUT}s" "certificateauthorities.${GROUP}/device-ca"
+	wait_ready "${examples[@]}"
+
+	step "What refers to the entities by name follows their new IDs"
+	local host intercept hosts service signer ca
+	host="$(mr_id confighostv1s web-service-host)"
+	intercept="$(mr_id configinterceptv1s web-service-intercept)"
+	hosts="$(mr_id confighostv2s web-hosts)"
+	service="$(mr_id services web-service)"
+	signer="$(mr_id externaljwtsigners corporate-sso)"
+	ca="$(mr_id certificateauthorities device-ca)"
+	eventually "service refers to its new configs" entity_matches services "${service}" \
+		"(.configs | sort) == ([\"${host}\", \"${intercept}\"] | sort)"
+	eventually "service refers to its new host.v2 config" entity_matches services "$(mr_id services web-pair)" ".configs == [\"${hosts}\"]"
+	eventually "dial policy refers to the new service" entity_matches service-policies "$(mr_id servicepolicies web-service-dial)" \
+		".serviceRoles == [\"@${service}\"]"
+	eventually "bind policy refers to the new identity" entity_matches service-policies "$(mr_id servicepolicies web-service-bind)" \
+		".identityRoles == [\"@$(mr_id identities web-server)\"]"
+	eventually "auth policy refers to the new signer" entity_matches auth-policies "$(mr_id authpolicies corporate-sso-only)" \
+		".primary.extJwt.allowedSigners == [\"${signer}\"]"
+	eventually "identity enrolls with the new certificate authority" entity_matches identities "$(mr_id identitycas sensor)" \
+		".enrollment.ottca.caId == \"${ca}\""
+
+	step "The entities created anew have new enrollment tokens"
+	expect_renewed identities web-client identities '.enrollment.ott.jwt' '.enrollment.ott.expiresAt' "${client}"
+	expect_renewed identities web-server identities '.enrollment.ott.jwt' '.enrollment.ott.expiresAt' "${server}"
+	expect_renewed identitycas sensor identities '.enrollment.ottca.jwt' '.enrollment.ottca.expiresAt' "${sensor}"
+	expect_renewed identityupdbs operator identities '.enrollment.updb.jwt' '.enrollment.updb.expiresAt' "${operator}"
+	expect_renewed edgerouters public-router edge-routers '.enrollmentJwt' '.enrollmentExpiresAt' "${router}"
+	entity_matches identities "$(mr_id identitynones sso-user)" '([.enrollment[]?] | length) == 0' >/dev/null ||
+		fail "identitynones/sso-user was given an enrollment"
+	ok "identitynones/sso-user: the new identity has no enrollment"
+
+	step "Nothing is updated without a spec change"
+	lifecycle_stamps() {
+		local i
+		for i in "${!plurals[@]}"; do
+			stamps "${collections[$i]}" "${ids[$i]}"
+		done
+		stamps services "$(mr_id services web-pair)"
+	}
+	for i in "${!plurals[@]}"; do
+		ids[i]="$(mr_id "${plurals[$i]}" "${names[$i]}")"
+	done
+	expect_settled "the entities created anew stay untouched" lifecycle_stamps
+
+	step "Deleting the resources of every kind deletes the entities"
+	# The certificate authority goes at the same time as the identity that
+	# refers to it.
+	kubectl delete --wait=false "certificateauthorities.${GROUP}/device-ca"
+	delete "${examples[@]}"
+	eventually "certificate authority is deleted" mr_gone certificateauthorities device-ca
+	for i in "${!plurals[@]}"; do
+		expect_gone "${plurals[$i]}/${names[$i]}: the entity is gone" "${collections[$i]}" "${names[$i]}"
+	done
+}
+
+# test_scenarios applies the manifests of examples/scenarios as a user would,
+# all at once, and checks that what they describe is in Ziti.
+test_scenarios() {
+	step "Applying the scenarios"
+	apply "${SCENARIO_EXAMPLES[@]}"
+	wait_ready "${SCENARIO_EXAMPLES[@]}"
+
+	step "Publishing a service"
+	local service host intercept
+	service="$(mr_id services orders-db)"
+	host="$(mr_id confighostv1s orders-db-host)"
+	intercept="$(mr_id configinterceptv1s orders-db-intercept)"
+	check_entity confighostv1s orders-db-host configs '.data == {"address": "postgres.internal", "port": 5432, "protocol": "tcp"}'
+	check_entity configinterceptv1s orders-db-intercept configs \
+		'.data == {"addresses": ["orders-db.ziti"], "protocols": ["tcp"], "portRanges": [{"low": 5432, "high": 5432}]}'
+	check_entity services orders-db services \
+		"(.configs | sort) == ([\"${host}\", \"${intercept}\"] | sort) and .roleAttributes == [\"databases\"] and .encryptionRequired == true"
+	check_entity servicepolicies orders-db-dial service-policies \
+		".type == \"Dial\" and .serviceRoles == [\"@${service}\"] and .identityRoles == [\"#orders-db-clients\"]"
+	check_entity servicepolicies orders-db-bind service-policies \
+		".type == \"Bind\" and .serviceRoles == [\"@${service}\"] and .identityRoles == [\"#orders-db-hosts\"]"
+	check_entity identities orders-api identities '.roleAttributes == ["orders-db-clients"]'
+	check_entity identities orders-db-tunnel identities '.roleAttributes == ["orders-db-hosts"]'
+	check_token orders-api-enrollment identities "$(mr_id identities orders-api)" '.enrollment.ott.jwt'
+	check_token orders-db-tunnel-enrollment identities "$(mr_id identities orders-db-tunnel)" '.enrollment.ott.jwt'
+	# What Ziti makes of the policies: who has access to the service.
+	eventually "the client has access to the service" listed "identities/$(mr_id identities orders-api)/services" orders-db
+	eventually "the tunneler has access to the service" listed "identities/$(mr_id identities orders-db-tunnel)/services" orders-db
+
+	step "Adding an edge router"
+	local router
+	router="$(mr_id edgerouters site-a-router)"
+	check_entity edgerouters site-a-router edge-routers '.roleAttributes == ["site-a"] and .isTunnelerEnabled == true'
+	check_token site-a-router-enrollment edge-routers "${router}" '.enrollmentJwt'
+	check_entity edgerouterpolicies all-identities-site-a edge-router-policies '.edgeRouterRoles == ["#site-a"] and .identityRoles == ["#all"]'
+	check_entity serviceedgerouterpolicies databases-site-a service-edge-router-policies \
+		'.serviceRoles == ["#databases"] and .edgeRouterRoles == ["#site-a"]'
+	eventually "the service is available on the router" listed "services/${service}/edge-routers" site-a-router
+	eventually "the client may use the router" listed "identities/$(mr_id identities orders-api)/edge-routers" site-a-router
+
+	step "Intercept and host configs"
+	check_entity configinterceptv1s app-intercept configs \
+		'.data == {"addresses": ["app.ziti"], "protocols": ["tcp"], "portRanges": [{"low": 443, "high": 443}]}'
+	check_entity confighostv1s app-host configs '.data == {"address": "10.0.0.10", "port": 8443, "protocol": "tcp"}'
+	check_entity configinterceptv1s office-lan-intercept configs \
+		'.data.addresses == ["10.20.0.0/16"] and (.data.protocols | sort) == ["tcp", "udp"] and .data.portRanges == [{"low": 1, "high": 65535}]'
+	check_entity confighostv1s office-lan-host configs \
+		'.data.forwardAddress == true and .data.allowedAddresses == ["10.20.0.0/16"] and .data.forwardPort == true and .data.allowedPortRanges == [{"low": 1, "high": 65535}] and .data.forwardProtocol == true and (.data.allowedProtocols | sort) == ["tcp", "udp"] and (.data | has("address") or has("port") or has("protocol") | not)'
+	check_entity configinterceptv1s apps-intercept configs '.data.addresses == ["*.apps.ziti"] and (.data.portRanges | length) == 2'
+	check_entity confighostv1s apps-host configs \
+		'.data.address == "ingress.internal" and .data.forwardPort == true and (.data.allowedPortRanges | length) == 2 and .data.protocol == "tcp" and (.data.portChecks | length) == 1 and (.data.portChecks[0].actions | length) == 2'
+	check_entity confighostv2s api-hosts configs \
+		'.configTypeId == "host.v2" and (.data.terminators | length) == 2 and .data.terminators[0].listenOptions.precedence == "required"'
+	local name
+	for name in app office-lan apps api; do
+		check_entity services "${name}" services "(.configs | length) == $([ "${name}" = api ] && echo 1 || echo 2)"
+	done
+
+	step "Nothing is updated without a spec change"
+	scenario_stamps() {
+		local name
+		for name in orders-db-host app-host office-lan-host apps-host; do
+			stamps configs "$(mr_id confighostv1s "${name}")"
+		done
+		for name in orders-db-intercept app-intercept office-lan-intercept apps-intercept; do
+			stamps configs "$(mr_id configinterceptv1s "${name}")"
+		done
+		stamps configs "$(mr_id confighostv2s api-hosts)"
+		for name in orders-db app office-lan apps api; do
+			stamps services "$(mr_id services "${name}")"
+		done
+		stamps service-policies "$(mr_id servicepolicies orders-db-dial)" "$(mr_id servicepolicies orders-db-bind)"
+		stamps identities "$(mr_id identities orders-api)" "$(mr_id identities orders-db-tunnel)"
+		stamps edge-routers "${router}"
+		stamps edge-router-policies "$(mr_id edgerouterpolicies all-identities-site-a)"
+		stamps service-edge-router-policies "$(mr_id serviceedgerouterpolicies databases-site-a)"
+	}
+	expect_settled "the entities of the scenarios stay untouched" scenario_stamps
+
+	step "Deleting the scenarios"
+	delete "${SCENARIO_EXAMPLES[@]}"
+	for name in orders-db app office-lan apps api; do
+		expect_gone "service ${name} is gone" services "${name}"
+	done
+	for name in orders-db-host orders-db-intercept app-host app-intercept office-lan-host office-lan-intercept apps-host apps-intercept api-hosts; do
+		expect_gone "config ${name} is gone" configs "${name}"
+	done
+	expect_gone "dial policy is gone" service-policies orders-db-dial
+	expect_gone "bind policy is gone" service-policies orders-db-bind
+	expect_gone "client identity is gone" identities orders-api
+	expect_gone "tunneler identity is gone" identities orders-db-tunnel
+	expect_gone "edge router is gone" edge-routers site-a-router
+	expect_gone "edge router policy is gone" edge-router-policies all-identities-site-a
+	expect_gone "service edge router policy is gone" service-edge-router-policies databases-site-a
+}
+
+# test_composition has Crossplane compose the resources of the provider from
+# the composite resource of examples/composition.
+test_composition() {
+	step "Installing the function, the definition and the Composition"
+	apply "${COMPOSITION_EXAMPLES[@]}"
+	# The active revision of the function says whether its pod answers.
+	function_runs() {
+		kubectl get functionrevisions.pkg.crossplane.io -l pkg.crossplane.io/package=function-patch-and-transform -o json |
+			jq -e '[.items[] | select(.spec.desiredState == "Active") | .status.conditions[]? | select(.type == "RuntimeHealthy") | .status] == ["True"]'
+	}
+	eventually "the function of the Composition runs" function_runs
+	kubectl wait --for=condition=Established --timeout="${TIMEOUT}s" "compositeresourcedefinitions.apiextensions.crossplane.io/${COMPOSITE}"
+	eventually "the kind of the composite resource is served" kubectl get "${COMPOSITE}" -n default
+
+	step "Creating a published service"
+	apply "${COMPOSITE_EXAMPLE}"
+	kubectl wait --for=condition=Ready --timeout="${TIMEOUT}s" -n default "${COMPOSITE}/wiki"
+	local service host intercept
+	service="$(ziti_id services wiki)"
+	host="$(ziti_id configs wiki-host)"
+	intercept="$(ziti_id configs wiki-intercept)"
+	[ -n "${service}" ] && [ -n "${host}" ] && [ -n "${intercept}" ] || fail "the service or one of its configs is not in Ziti"
+	entity_is() {
+		if named_matches "$2" "$3" "$4" >/dev/null; then
+			ok "$1"
+		else
+			fail "$1: no entity $3 in $2 satisfies: $4"
+		fi
+	}
+	entity_is "host config is as composed" configs wiki-host '.data == {"address": "wiki.internal", "port": 8443, "protocol": "tcp"}'
+	entity_is "intercept config is as composed" configs wiki-intercept \
+		'.data == {"addresses": ["wiki.ziti"], "protocols": ["tcp"], "portRanges": [{"low": 443, "high": 443}]}'
+	entity_is "service has both configs" services wiki "(.configs | sort) == ([\"${host}\", \"${intercept}\"] | sort) and .encryptionRequired == true"
+	entity_is "dial policy is as composed" service-policies wiki-dial \
+		".type == \"Dial\" and .serviceRoles == [\"@${service}\"] and .identityRoles == [\"#wiki-clients\"]"
+	entity_is "bind policy is as composed" service-policies wiki-bind \
+		".type == \"Bind\" and .serviceRoles == [\"@${service}\"] and .identityRoles == [\"#wiki-hosts\"]"
+	entity_is "service edge router policy is as composed" service-edge-router-policies wiki-routers \
+		".serviceRoles == [\"@${service}\"] and .edgeRouterRoles == [\"#all\"]"
+	reports_service() {
+		[ "$(kubectl get "${COMPOSITE}" wiki -n default -o jsonpath='{.status.serviceId}')" = "$1" ]
+	}
+	eventually "the published service reports the ID of its service" reports_service "${service}"
+
+	step "Changing the published service changes Ziti"
+	kubectl patch "${COMPOSITE}" wiki -n default --type merge \
+		-p '{"spec": {"upstream": {"port": 9443}, "intercept": {"address": "wiki.example.ziti"}, "edgeRouterRole": "#public"}}' >/dev/null
+	eventually "host config follows the published service" entity_matches configs "${host}" '.data.port == 9443'
+	eventually "intercept config follows the published service" entity_matches configs "${intercept}" '.data.addresses == ["wiki.example.ziti"]'
+	eventually "service edge router policy follows the published service" named_matches service-edge-router-policies wiki-routers \
+		'.edgeRouterRoles == ["#public"]'
+
+	step "A composed entity that is deleted in Ziti is created anew"
+	ziti_delete services "${service}" || fail "cannot delete the service in Ziti"
+	composed_anew() {
+		local id
+		id="$(ziti_id services wiki)" || return 1
+		[ -n "${id}" ] && [ "${id}" != "${service}" ]
+	}
+	eventually "service is created anew" composed_anew
+	service="$(ziti_id services wiki)"
+	eventually "the published service reports the new ID" reports_service "${service}"
+	eventually "dial policy refers to the new service" named_matches service-policies wiki-dial ".serviceRoles == [\"@${service}\"]"
+	kubectl wait --for=condition=Ready --timeout="${TIMEOUT}s" -n default "${COMPOSITE}/wiki"
+
+	step "Deleting the published service deletes what it is composed of"
+	kubectl delete --wait --timeout="${TIMEOUT}s" -n default "${COMPOSITE}/wiki"
+	eventually "service is gone" ziti_gone services wiki
+	eventually "host config is gone" ziti_gone configs wiki-host
+	eventually "intercept config is gone" ziti_gone configs wiki-intercept
+	eventually "dial policy is gone" ziti_gone service-policies wiki-dial
+	eventually "bind policy is gone" ziti_gone service-policies wiki-bind
+	eventually "service edge router policy is gone" ziti_gone service-edge-router-policies wiki-routers
+}
+
 run_tests() {
 	ziti_login
+	configure
+	if [ -n "${E2E_ONLY:-}" ]; then
+		local stage
+		for stage in ${E2E_ONLY}; do
+			"test_${stage}"
+		done
+		step "The end-to-end checks of ${E2E_ONLY} passed"
+		return
+	fi
 	test_core
 	test_drift
 	if [ "${E2E_SKIP_EXTENDED:-false}" != "true" ]; then
@@ -1308,6 +1759,13 @@ run_tests() {
 		test_posture_checks
 		test_authentication
 		test_renewal
+		test_lifecycle
+		test_scenarios
+		if has_crossplane; then
+			test_composition
+		else
+			step "Skipping the Composition: Crossplane is not installed"
+		fi
 	fi
 	step "All end-to-end checks passed"
 }
@@ -1322,7 +1780,10 @@ logs() {
 	step "Provider log (last 200 lines)"
 	tail -n 200 "${WORK}/provider.log" 2>/dev/null | redact || true
 	step "Ziti controller log (last 50 lines)"
-	docker compose -p "${COMPOSE_PROJECT}" -f "${COMPOSE_FILE}" logs --tail 50 ziti-controller 2>&1 | redact || true
+	# Only "up" starts the controller with docker.
+	if command -v docker >/dev/null 2>&1; then
+		docker compose -p "${COMPOSE_PROJECT}" -f "${COMPOSE_FILE}" logs --tail 50 ziti-controller 2>&1 | redact || true
+	fi
 }
 
 down() {
@@ -1339,13 +1800,14 @@ up) up ;;
 test) run_tests ;;
 logs) logs ;;
 down) down ;;
+crossplane) crossplane ;;
 all)
 	trap 'logs; down' EXIT
 	up
 	run_tests
 	;;
 *)
-	sed -n '2,21p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
+	sed -n '2,32p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
 	exit 2
 	;;
 esac

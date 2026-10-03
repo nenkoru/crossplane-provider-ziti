@@ -36,7 +36,8 @@ type PostureCheckProcessParameters struct {
 	Name string `json:"name"`
 	// Process that must be running.
 	Process Process `json:"process"`
-	// RoleAttributes for the posture check.
+	// RoleAttributes are the attributes service policies select the posture
+	// check by, as "#attribute".
 	// +optional
 	RoleAttributes []string `json:"roleAttributes,omitempty"`
 	// Tags is a map of tags.
@@ -71,7 +72,8 @@ type PostureCheckProcessObservation struct {
 	UpdatedAt      string              `json:"updatedAt,omitempty"`
 }
 
-// PostureCheckProcess is the top level Ziti Process Posture Check resource.
+// PostureCheckProcess is a Ziti posture check that a device passes while the
+// process runs on it.
 // +kubebuilder:object:root=true
 // +kubebuilder:subresource:status
 // +kubebuilder:printcolumn:name="NAME",type="string",JSONPath=`.spec.forProvider.name`

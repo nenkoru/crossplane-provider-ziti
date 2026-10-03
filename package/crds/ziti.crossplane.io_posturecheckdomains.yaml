@@ -34,8 +34,9 @@ spec:
     name: v1alpha1
     schema:
       openAPIV3Schema:
-        description: PostureCheckDomain is the top level Ziti Windows Domain Posture
-          Check resource.
+        description: |-
+          PostureCheckDomain is a Ziti posture check that a Windows device passes if
+          it is joined to one of the listed domains.
         properties:
           apiVersion:
             description: |-
@@ -75,7 +76,9 @@ spec:
                     description: Name of the posture check.
                     type: string
                   roleAttributes:
-                    description: RoleAttributes for the posture check.
+                    description: |-
+                      RoleAttributes are the attributes service policies select the posture
+                      check by, as "#attribute".
                     items:
                       type: string
                     type: array

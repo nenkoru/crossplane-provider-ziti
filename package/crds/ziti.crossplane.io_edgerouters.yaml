@@ -64,29 +64,37 @@ spec:
                   Edge Router.
                 properties:
                   cost:
-                    description: Cost is the hosting cost for this edge router.
+                    description: 'Cost of a route through the router: Ziti prefers
+                      cheaper routes.'
                     format: int64
                     type: integer
                   isTunnelerEnabled:
-                    description: IsTunnelerEnabled indicates whether the tunneler
-                      feature is enabled.
+                    description: |-
+                      IsTunnelerEnabled lets the router intercept and host services itself,
+                      like a tunneler. Ziti creates an identity with the name of the router
+                      for that.
                     type: boolean
                   name:
                     description: Name of the edge router.
                     type: string
                   noTraversal:
-                    description: NoTraversal indicates whether traversal is disabled.
+                    description: |-
+                      NoTraversal keeps traffic of other routers from passing through the
+                      router: circuits may only start or end at it.
                     type: boolean
                   roleAttributes:
-                    description: RoleAttributes is a list of role attributes for the
-                      edge router.
+                    description: |-
+                      RoleAttributes are the attributes policies select the edge router by, as
+                      "#attribute".
                     items:
                       type: string
                     type: array
                   tags:
                     additionalProperties:
                       type: string
-                    description: Tags is a map of tags for the edge router.
+                    description: |-
+                      Tags are free-form labels Ziti stores with the edge router. They do not
+                      affect access or routing.
                     type: object
                 required:
                 - name

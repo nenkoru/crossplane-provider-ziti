@@ -22,23 +22,28 @@ type EdgeRouterParameters struct {
 	// Name of the edge router.
 	Name string `json:"name"`
 
-	// IsTunnelerEnabled indicates whether the tunneler feature is enabled.
+	// IsTunnelerEnabled lets the router intercept and host services itself,
+	// like a tunneler. Ziti creates an identity with the name of the router
+	// for that.
 	// +optional
 	IsTunnelerEnabled *bool `json:"isTunnelerEnabled,omitempty"`
 
-	// NoTraversal indicates whether traversal is disabled.
+	// NoTraversal keeps traffic of other routers from passing through the
+	// router: circuits may only start or end at it.
 	// +optional
 	NoTraversal *bool `json:"noTraversal,omitempty"`
 
-	// Cost is the hosting cost for this edge router.
+	// Cost of a route through the router: Ziti prefers cheaper routes.
 	// +optional
 	Cost *int64 `json:"cost,omitempty"`
 
-	// RoleAttributes is a list of role attributes for the edge router.
+	// RoleAttributes are the attributes policies select the edge router by, as
+	// "#attribute".
 	// +optional
 	RoleAttributes []string `json:"roleAttributes,omitempty"`
 
-	// Tags is a map of tags for the edge router.
+	// Tags are free-form labels Ziti stores with the edge router. They do not
+	// affect access or routing.
 	// +optional
 	Tags map[string]string `json:"tags,omitempty"`
 }
