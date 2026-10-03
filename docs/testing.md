@@ -19,27 +19,27 @@ five things, in the stages the table names:
 
 | Kind | Created, changed, deleted | Drift reverted | Gone in Ziti, created anew |
 |------|---------------------------|----------------|----------------------------|
-| [`Service`](resources/service.md) | core, scenarios, composition | drift, lifecycle | drift, lifecycle, composition |
-| [`ConfigHostV1`](resources/confighostv1.md) | core, scenarios, composition | drift, lifecycle | drift, lifecycle |
-| [`ConfigInterceptV1`](resources/configinterceptv1.md) | core, scenarios, composition | lifecycle | lifecycle |
-| [`ServicePolicy`](resources/servicepolicy.md) | core, scenarios, composition | drift, lifecycle | drift, lifecycle |
-| [`Identity`](resources/identity.md) | core, scenarios | core, drift, lifecycle | drift, lifecycle |
-| [`EdgeRouter`](resources/edgerouter.md) | extended, scenarios | lifecycle | lifecycle |
-| [`EdgeRouterPolicy`](resources/edgerouterpolicy.md) | extended, scenarios | lifecycle | lifecycle |
-| [`ServiceEdgeRouterPolicy`](resources/serviceedgerouterpolicy.md) | extended, scenarios, composition | lifecycle | lifecycle |
-| [`PostureCheckOS`](resources/posturecheckos.md) | extended | lifecycle | lifecycle |
-| [`PostureCheckMFA`](resources/posturecheckmfa.md) | extended | lifecycle | lifecycle |
-| [`AuthPolicy`](resources/authpolicy.md) | extended, authentication | authentication, lifecycle | lifecycle |
-| [`ConfigHostV2`](resources/confighostv2.md) | extended, scenarios | lifecycle | lifecycle |
-| [`IdentityCA`](resources/identityca.md) | extended, authentication | lifecycle | lifecycle |
-| [`IdentityUPDB`](resources/identityupdb.md) | extended | lifecycle | lifecycle |
-| [`IdentityNone`](resources/identitynone.md) | extended | lifecycle | lifecycle |
-| [`PostureCheckDomain`](resources/posturecheckdomain.md) | posture_checks | posture_checks, lifecycle | lifecycle |
-| [`PostureCheckMac`](resources/posturecheckmac.md) | posture_checks | posture_checks, lifecycle | lifecycle |
-| [`PostureCheckProcess`](resources/posturecheckprocess.md) | posture_checks | posture_checks, lifecycle | lifecycle |
-| [`PostureCheckMultiProcess`](resources/posturecheckmultiprocess.md) | posture_checks | posture_checks, lifecycle | lifecycle |
-| [`CertificateAuthority`](resources/certificateauthority.md) | authentication | authentication, lifecycle | lifecycle |
-| [`ExternalJWTSigner`](resources/externaljwtsigner.md) | authentication | authentication, lifecycle | lifecycle |
+| [`Service`](resources/service.md) | core, scenarios, composition, lifecycle | drift, lifecycle | drift, lifecycle, composition |
+| [`ConfigHostV1`](resources/confighostv1.md) | core, scenarios, composition, lifecycle | drift, lifecycle | drift, lifecycle |
+| [`ConfigInterceptV1`](resources/configinterceptv1.md) | core, scenarios, composition, lifecycle | lifecycle | lifecycle |
+| [`ServicePolicy`](resources/servicepolicy.md) | core, scenarios, composition, lifecycle | drift, lifecycle | drift, lifecycle |
+| [`Identity`](resources/identity.md) | core, scenarios, lifecycle | core, drift, lifecycle | drift, lifecycle |
+| [`EdgeRouter`](resources/edgerouter.md) | extended, scenarios, lifecycle | lifecycle | lifecycle |
+| [`EdgeRouterPolicy`](resources/edgerouterpolicy.md) | extended, scenarios, lifecycle | lifecycle | lifecycle |
+| [`ServiceEdgeRouterPolicy`](resources/serviceedgerouterpolicy.md) | extended, scenarios, composition, lifecycle | lifecycle | lifecycle |
+| [`PostureCheckOS`](resources/posturecheckos.md) | extended, lifecycle | lifecycle | lifecycle |
+| [`PostureCheckMFA`](resources/posturecheckmfa.md) | extended, lifecycle | lifecycle | lifecycle |
+| [`AuthPolicy`](resources/authpolicy.md) | extended, authentication, lifecycle | authentication, lifecycle | lifecycle |
+| [`ConfigHostV2`](resources/confighostv2.md) | extended, scenarios, lifecycle | lifecycle | lifecycle |
+| [`IdentityCA`](resources/identityca.md) | extended, authentication, lifecycle | lifecycle | lifecycle |
+| [`IdentityUPDB`](resources/identityupdb.md) | extended, lifecycle | lifecycle | lifecycle |
+| [`IdentityNone`](resources/identitynone.md) | extended, lifecycle | lifecycle | lifecycle |
+| [`PostureCheckDomain`](resources/posturecheckdomain.md) | posture_checks, lifecycle | posture_checks, lifecycle | lifecycle |
+| [`PostureCheckMac`](resources/posturecheckmac.md) | posture_checks, lifecycle | posture_checks, lifecycle | lifecycle |
+| [`PostureCheckProcess`](resources/posturecheckprocess.md) | posture_checks, lifecycle | posture_checks, lifecycle | lifecycle |
+| [`PostureCheckMultiProcess`](resources/posturecheckmultiprocess.md) | posture_checks, lifecycle | posture_checks, lifecycle | lifecycle |
+| [`CertificateAuthority`](resources/certificateauthority.md) | authentication, lifecycle | authentication, lifecycle | lifecycle |
+| [`ExternalJWTSigner`](resources/externaljwtsigner.md) | authentication, lifecycle | authentication, lifecycle | lifecycle |
 
 `go test ./apis/...` fails if a kind has no row in the `lifecycle` stage or
 no example.

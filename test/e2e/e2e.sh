@@ -1671,10 +1671,10 @@ test_scenarios() {
 test_composition() {
 	step "Installing the function, the definition and the Composition"
 	apply "${COMPOSITION_EXAMPLES[@]}"
-	# The revision of the function says whether its pod answers.
+	# The active revision of the function says whether its pod answers.
 	function_runs() {
-		kubectl get functionrevisions.pkg.crossplane.io -l pkg.crossplane.io/package=function-patch-and-transform \
-			-o jsonpath='{.items[*].status.conditions[?(@.type=="RuntimeHealthy")].status}' | grep -qx True
+		kubectl get functionrevisions.pkg.crossplane.io -l pkg.crossplane.io/package=function-patch-and-transform -o json |
+			jq -e '[.items[] | select(.spec.desiredState == "Active") | .status.conditions[]? | select(.type == "RuntimeHealthy") | .status] == ["True"]'
 	}
 	eventually "the function of the Composition runs" function_runs
 	kubectl wait --for=condition=Established --timeout="${TIMEOUT}s" "compositeresourcedefinitions.apiextensions.crossplane.io/${COMPOSITE}"
