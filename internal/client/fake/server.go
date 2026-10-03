@@ -145,6 +145,18 @@ func (s *Server) Entity(collection, id string) map[string]any {
 	return maps.Clone(s.collections[collection][id])
 }
 
+// Entities returns copies of the entities of a collection, in no particular
+// order.
+func (s *Server) Entities(collection string) []map[string]any {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	out := make([]map[string]any, 0, len(s.collections[collection]))
+	for _, e := range s.collections[collection] {
+		out = append(out, maps.Clone(e))
+	}
+	return out
+}
+
 // Len returns the number of entities in a collection.
 func (s *Server) Len(collection string) int {
 	s.mu.Lock()

@@ -17,6 +17,7 @@ limitations under the License.
 package fake
 
 import (
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -92,6 +93,10 @@ func (s *Server) takeFault(r *http.Request) (Fault, bool) {
 func (s *Server) fail(w http.ResponseWriter, r *http.Request, f Fault) {
 	if f.CarriedOut {
 		s.serve(httptest.NewRecorder(), r)
+	} else {
+		// The server notices that the client gave up only once the body
+		// has been read.
+		_, _ = io.Copy(io.Discard, r.Body)
 	}
 
 	if f.Delay > 0 {
