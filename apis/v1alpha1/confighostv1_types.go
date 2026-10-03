@@ -23,39 +23,45 @@ import (
 
 // ForwardAddressTranslation defines an address translation rule.
 type ForwardAddressTranslation struct {
-	// From is the source address pattern.
+	// From is the range of addresses clients ask for, in CIDR notation.
 	From string `json:"from"`
-	// To is the destination address pattern.
+	// To is the range the hosting tunneler connects to instead, in CIDR
+	// notation.
 	To string `json:"to"`
-	// PrefixLength is the prefix length for the translation.
+	// PrefixLength is the length of the prefix that is replaced: the bits
+	// after it are kept.
 	PrefixLength int32 `json:"prefixLength"`
 }
 
 // ListenOptions defines listen options for the host config.
 type ListenOptions struct {
-	// BindUsingEdgeIdentity indicates whether to bind using edge identity.
+	// BindUsingEdgeIdentity offers the service under the name of the hosting
+	// identity, so that a client can dial one host among several.
 	// +optional
 	BindUsingEdgeIdentity *bool `json:"bindUsingEdgeIdentity,omitempty"`
 
-	// ConnectTimeout is the connection timeout (e.g., "5s").
+	// ConnectTimeout is how long the hosting tunneler waits for the
+	// destination to accept a connection, as a duration such as 5s.
 	// +optional
 	ConnectTimeout *string `json:"connectTimeout,omitempty"`
 
-	// Cost is the cost for this listener.
+	// Cost of the terminator: Ziti prefers cheaper terminators.
 	// +optional
 	// +kubebuilder:default=0
 	// +kubebuilder:validation:Minimum=0
 	// +kubebuilder:validation:Maximum=65535
 	Cost *int32 `json:"cost,omitempty"`
 
-	// MaxConnections is the maximum number of connections.
+	// MaxConnections is the number of connections to edge routers the hosting
+	// tunneler listens for the service on.
 	// +optional
 	// +kubebuilder:default=65535
 	// +kubebuilder:validation:Minimum=1
 	// +kubebuilder:validation:Maximum=65535
 	MaxConnections *int32 `json:"maxConnections,omitempty"`
 
-	// Precedence is the precedence level (default, required, failed).
+	// Precedence of the terminator: one with required is used before one with
+	// default, and one with failed only when nothing else is left.
 	// +optional
 	// +kubebuilder:default=default
 	// +kubebuilder:validation:Enum=default;required;failed
@@ -64,11 +70,11 @@ type ListenOptions struct {
 
 // ProxyConfig defines proxy configuration.
 type ProxyConfig struct {
-	// Address is the proxy address.
+	// Address of the proxy, as host:port.
 	// +optional
 	Address *string `json:"address,omitempty"`
 
-	// Type is the proxy type (e.g., "http").
+	// Type of the proxy. Ziti knows http.
 	// +optional
 	// +kubebuilder:default=http
 	// +kubebuilder:validation:Enum=http
@@ -77,17 +83,22 @@ type ProxyConfig struct {
 
 // CheckAction defines an action for health checks.
 type CheckAction struct {
-	// Trigger is the trigger condition (pass, fail, change).
+	// Trigger says which results run the action: checks that pass, checks that
+	// fail, or a change from one to the other.
 	// +kubebuilder:validation:Enum=pass;fail;change
 	Trigger string `json:"trigger"`
 
-	// Duration is the duration for the action.
+	// Duration is how long the results must have lasted before the action
+	// runs, as a duration such as 30s.
 	Duration string `json:"duration"`
 
-	// Action is the action to take (mark unhealthy, mark healthy, send event, increase cost N, decrease cost N).
+	// Action to take: "mark unhealthy" stops offering the terminator, "mark
+	// healthy" offers it again, "increase cost N" and "decrease cost N" change
+	// its cost, "send event" reports the result to the controller.
 	Action string `json:"action"`
 
-	// ConsecutiveEvents is the number of consecutive events required.
+	// ConsecutiveEvents is how many results in a row it takes before the
+	// action runs.
 	// +optional
 	// +kubebuilder:default=1
 	ConsecutiveEvents *int32 `json:"consecutiveEvents,omitempty"`
@@ -95,50 +106,52 @@ type CheckAction struct {
 
 // HTTPCheck defines an HTTP health check.
 type HTTPCheck struct {
-	// URL is the URL to check.
+	// URL the hosting tunneler requests.
 	URL string `json:"url"`
 
-	// Method is the HTTP method (GET, PUT, POST, PATCH).
+	// Method of the request: GET, PUT, POST or PATCH.
 	// +kubebuilder:validation:Enum=GET;PUT;POST;PATCH
 	Method string `json:"method"`
 
-	// Body is the request body.
+	// Body of the request.
 	// +optional
 	Body *string `json:"body,omitempty"`
 
-	// ExpectStatus is the expected HTTP status code.
+	// ExpectStatus is the status code of a check that passes.
 	// +optional
 	// +kubebuilder:default=200
 	// +kubebuilder:validation:Minimum=100
 	// +kubebuilder:validation:Maximum=599
 	ExpectStatus *int32 `json:"expectStatus,omitempty"`
 
-	// ExpectInBody is the expected string in response body.
+	// ExpectInBody is text the response of a check that passes contains.
 	// +optional
 	ExpectInBody *string `json:"expectInBody,omitempty"`
 
-	// Interval is the check interval (e.g., "10s").
+	// Interval between two checks, as a duration such as 10s.
 	Interval string `json:"interval"`
 
-	// Timeout is the check timeout (e.g., "5s").
+	// Timeout after which a check without an answer fails, as a duration such
+	// as 5s.
 	Timeout string `json:"timeout"`
 
-	// Actions are the actions to take on check results.
+	// Actions to take on the results of the check.
 	Actions []CheckAction `json:"actions"`
 }
 
 // PortCheck defines a port health check.
 type PortCheck struct {
-	// Address is the address to check.
+	// Address the hosting tunneler connects to, as host:port.
 	Address string `json:"address"`
 
-	// Interval is the check interval (e.g., "10s").
+	// Interval between two checks, as a duration such as 10s.
 	Interval string `json:"interval"`
 
-	// Timeout is the check timeout (e.g., "5s").
+	// Timeout after which a check without an answer fails, as a duration such
+	// as 5s.
 	Timeout string `json:"timeout"`
 
-	// Actions are the actions to take on check results.
+	// Actions to take on the results of the check.
 	Actions []CheckAction `json:"actions"`
 }
 
@@ -158,67 +171,80 @@ type ConfigHostV1Status struct {
 // service and how it listens for it. It is the whole of a host.v1 config and
 // one terminator of a host.v2 config.
 type HostTerminator struct {
-	// Address is the host address.
+	// Address is the host name or IP address the hosting tunneler connects to.
+	// Leave it out when forwardAddress is set.
 	// +optional
 	Address *string `json:"address,omitempty"`
 
-	// Port is the host port.
+	// Port the hosting tunneler connects to. Leave it out when forwardPort is
+	// set.
 	// +optional
 	// +kubebuilder:validation:Minimum=1
 	// +kubebuilder:validation:Maximum=65535
 	Port *int32 `json:"port,omitempty"`
 
-	// Protocol is the host protocol (tcp, udp).
+	// Protocol the hosting tunneler connects with: tcp or udp. Leave it out
+	// when forwardProtocol is set.
 	// +optional
 	// +kubebuilder:validation:Enum=tcp;udp
 	Protocol *string `json:"protocol,omitempty"`
 
-	// ForwardProtocol indicates whether to forward allowed protocols.
+	// ForwardProtocol connects with the protocol the client used, if
+	// allowedProtocols has it.
 	// +optional
 	ForwardProtocol *bool `json:"forwardProtocol,omitempty"`
 
-	// ForwardPort indicates whether to forward allowed port ranges.
+	// ForwardPort connects to the port the client asked for, if
+	// allowedPortRanges has it.
 	// +optional
 	ForwardPort *bool `json:"forwardPort,omitempty"`
 
-	// ForwardAddress indicates whether to forward allowed addresses.
+	// ForwardAddress connects to the address the client asked for, if
+	// allowedAddresses has it.
 	// +optional
 	ForwardAddress *bool `json:"forwardAddress,omitempty"`
 
-	// AllowedProtocols is a list of protocols that can be forwarded (tcp, udp).
+	// AllowedProtocols are the protocols forwardProtocol may connect with:
+	// tcp, udp.
 	// +optional
 	// +kubebuilder:validation:Items:Enum=tcp;udp
 	AllowedProtocols []string `json:"allowedProtocols,omitempty"`
 
-	// AllowedAddresses is a list of addresses that can be forwarded.
+	// AllowedAddresses are the IP addresses, CIDR ranges and host names
+	// forwardAddress may connect to.
 	// +optional
 	AllowedAddresses []string `json:"allowedAddresses,omitempty"`
 
-	// AllowedSourceAddresses is a list of source addresses that can be forwarded.
+	// AllowedSourceAddresses are the addresses the hosting tunneler may
+	// connect from when the intercept config of the service sets sourceIp.
 	// +optional
 	AllowedSourceAddresses []string `json:"allowedSourceAddresses,omitempty"`
 
-	// ForwardAddressTranslations is a list of address translations to forward.
+	// ForwardAddressTranslations move the address the client asked for into
+	// another range before the hosting tunneler connects.
 	// +optional
 	ForwardAddressTranslations []ForwardAddressTranslation `json:"forwardAddressTranslations,omitempty"`
 
-	// AllowedPortRanges is a list of port ranges that can be forwarded.
+	// AllowedPortRanges are the ports forwardPort may connect to.
 	// +optional
 	AllowedPortRanges []PortRange `json:"allowedPortRanges,omitempty"`
 
-	// ListenOptions defines listen options.
+	// ListenOptions say how the hosting tunneler offers the service to the
+	// network.
 	// +optional
 	ListenOptions *ListenOptions `json:"listenOptions,omitempty"`
 
-	// Proxy defines proxy configuration.
+	// Proxy makes the hosting tunneler connect through a proxy.
 	// +optional
 	Proxy *ProxyConfig `json:"proxy,omitempty"`
 
-	// HTTPChecks is a list of HTTP health checks.
+	// HTTPChecks are health checks the hosting tunneler makes with HTTP
+	// requests. Their actions change how its terminator is offered.
 	// +optional
 	HTTPChecks []HTTPCheck `json:"httpChecks,omitempty"`
 
-	// PortChecks is a list of port health checks.
+	// PortChecks are health checks the hosting tunneler makes by opening a TCP
+	// connection. Their actions change how its terminator is offered.
 	// +optional
 	PortChecks []PortCheck `json:"portChecks,omitempty"`
 }
@@ -259,7 +285,8 @@ type ConfigHostV1Observation struct {
 	UpdatedAt                  string                      `json:"updatedAt,omitempty"`
 }
 
-// ConfigHostV1 is the Schema for the ConfigHostV1s API.
+// ConfigHostV1 is a Ziti config of type host.v1: where the tunneler that hosts
+// a service sends the traffic of the service.
 // +kubebuilder:object:root=true
 // +kubebuilder:subresource:status
 // +kubebuilder:printcolumn:name="NAME",type=string,JSONPath=`.spec.forProvider.name`

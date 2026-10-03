@@ -50,7 +50,8 @@ type PostureCheckMultiProcessParameters struct {
 	// +listMapKey=osType
 	// +listMapKey=path
 	Processes []MultiProcess `json:"processes"`
-	// RoleAttributes for the posture check.
+	// RoleAttributes are the attributes service policies select the posture
+	// check by, as "#attribute".
 	// +optional
 	RoleAttributes []string `json:"roleAttributes,omitempty"`
 	// Tags is a map of tags.
@@ -87,7 +88,9 @@ type PostureCheckMultiProcessObservation struct {
 	UpdatedAt      string                    `json:"updatedAt,omitempty"`
 }
 
-// PostureCheckMultiProcess is the top level Ziti Multi Process Posture Check resource.
+// PostureCheckMultiProcess is a Ziti posture check that a device passes while
+// the listed processes run on it: all of them or any one, as the semantic
+// says.
 // +kubebuilder:object:root=true
 // +kubebuilder:subresource:status
 // +kubebuilder:printcolumn:name="NAME",type="string",JSONPath=`.spec.forProvider.name`

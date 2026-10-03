@@ -82,26 +82,29 @@ spec:
                         one terminator of a host.v2 config.
                       properties:
                         address:
-                          description: Address is the host address.
+                          description: |-
+                            Address is the host name or IP address the hosting tunneler connects to.
+                            Leave it out when forwardAddress is set.
                           type: string
                         allowedAddresses:
-                          description: AllowedAddresses is a list of addresses that
-                            can be forwarded.
+                          description: |-
+                            AllowedAddresses are the IP addresses, CIDR ranges and host names
+                            forwardAddress may connect to.
                           items:
                             type: string
                           type: array
                         allowedPortRanges:
-                          description: AllowedPortRanges is a list of port ranges
-                            that can be forwarded.
+                          description: AllowedPortRanges are the ports forwardPort
+                            may connect to.
                           items:
                             description: PortRange defines a range of ports.
                             properties:
                               high:
-                                description: High is the high port number.
+                                description: High is the last port of the range.
                                 format: int32
                                 type: integer
                               low:
-                                description: Low is the low port number.
+                                description: Low is the first port of the range.
                                 format: int32
                                 type: integer
                             required:
@@ -110,38 +113,46 @@ spec:
                             type: object
                           type: array
                         allowedProtocols:
-                          description: AllowedProtocols is a list of protocols that
-                            can be forwarded (tcp, udp).
+                          description: |-
+                            AllowedProtocols are the protocols forwardProtocol may connect with:
+                            tcp, udp.
                           items:
                             type: string
                           type: array
                         allowedSourceAddresses:
-                          description: AllowedSourceAddresses is a list of source
-                            addresses that can be forwarded.
+                          description: |-
+                            AllowedSourceAddresses are the addresses the hosting tunneler may
+                            connect from when the intercept config of the service sets sourceIp.
                           items:
                             type: string
                           type: array
                         forwardAddress:
-                          description: ForwardAddress indicates whether to forward
-                            allowed addresses.
+                          description: |-
+                            ForwardAddress connects to the address the client asked for, if
+                            allowedAddresses has it.
                           type: boolean
                         forwardAddressTranslations:
-                          description: ForwardAddressTranslations is a list of address
-                            translations to forward.
+                          description: |-
+                            ForwardAddressTranslations move the address the client asked for into
+                            another range before the hosting tunneler connects.
                           items:
                             description: ForwardAddressTranslation defines an address
                               translation rule.
                             properties:
                               from:
-                                description: From is the source address pattern.
+                                description: From is the range of addresses clients
+                                  ask for, in CIDR notation.
                                 type: string
                               prefixLength:
-                                description: PrefixLength is the prefix length for
-                                  the translation.
+                                description: |-
+                                  PrefixLength is the length of the prefix that is replaced: the bits
+                                  after it are kept.
                                 format: int32
                                 type: integer
                               to:
-                                description: To is the destination address pattern.
+                                description: |-
+                                  To is the range the hosting tunneler connects to instead, in CIDR
+                                  notation.
                                 type: string
                             required:
                             - from
@@ -150,43 +161,51 @@ spec:
                             type: object
                           type: array
                         forwardPort:
-                          description: ForwardPort indicates whether to forward allowed
-                            port ranges.
+                          description: |-
+                            ForwardPort connects to the port the client asked for, if
+                            allowedPortRanges has it.
                           type: boolean
                         forwardProtocol:
-                          description: ForwardProtocol indicates whether to forward
-                            allowed protocols.
+                          description: |-
+                            ForwardProtocol connects with the protocol the client used, if
+                            allowedProtocols has it.
                           type: boolean
                         httpChecks:
-                          description: HTTPChecks is a list of HTTP health checks.
+                          description: |-
+                            HTTPChecks are health checks the hosting tunneler makes with HTTP
+                            requests. Their actions change how its terminator is offered.
                           items:
                             description: HTTPCheck defines an HTTP health check.
                             properties:
                               actions:
-                                description: Actions are the actions to take on check
-                                  results.
+                                description: Actions to take on the results of the
+                                  check.
                                 items:
                                   description: CheckAction defines an action for health
                                     checks.
                                   properties:
                                     action:
-                                      description: Action is the action to take (mark
-                                        unhealthy, mark healthy, send event, increase
-                                        cost N, decrease cost N).
+                                      description: |-
+                                        Action to take: "mark unhealthy" stops offering the terminator, "mark
+                                        healthy" offers it again, "increase cost N" and "decrease cost N" change
+                                        its cost, "send event" reports the result to the controller.
                                       type: string
                                     consecutiveEvents:
                                       default: 1
-                                      description: ConsecutiveEvents is the number
-                                        of consecutive events required.
+                                      description: |-
+                                        ConsecutiveEvents is how many results in a row it takes before the
+                                        action runs.
                                       format: int32
                                       type: integer
                                     duration:
-                                      description: Duration is the duration for the
-                                        action.
+                                      description: |-
+                                        Duration is how long the results must have lasted before the action
+                                        runs, as a duration such as 30s.
                                       type: string
                                     trigger:
-                                      description: Trigger is the trigger condition
-                                        (pass, fail, change).
+                                      description: |-
+                                        Trigger says which results run the action: checks that pass, checks that
+                                        fail, or a change from one to the other.
                                       enum:
                                       - pass
                                       - fail
@@ -199,27 +218,27 @@ spec:
                                   type: object
                                 type: array
                               body:
-                                description: Body is the request body.
+                                description: Body of the request.
                                 type: string
                               expectInBody:
-                                description: ExpectInBody is the expected string in
-                                  response body.
+                                description: ExpectInBody is text the response of
+                                  a check that passes contains.
                                 type: string
                               expectStatus:
                                 default: 200
-                                description: ExpectStatus is the expected HTTP status
-                                  code.
+                                description: ExpectStatus is the status code of a
+                                  check that passes.
                                 format: int32
                                 maximum: 599
                                 minimum: 100
                                 type: integer
                               interval:
-                                description: Interval is the check interval (e.g.,
-                                  "10s").
+                                description: Interval between two checks, as a duration
+                                  such as 10s.
                                 type: string
                               method:
-                                description: Method is the HTTP method (GET, PUT,
-                                  POST, PATCH).
+                                description: 'Method of the request: GET, PUT, POST
+                                  or PATCH.'
                                 enum:
                                 - GET
                                 - PUT
@@ -227,10 +246,12 @@ spec:
                                 - PATCH
                                 type: string
                               timeout:
-                                description: Timeout is the check timeout (e.g., "5s").
+                                description: |-
+                                  Timeout after which a check without an answer fails, as a duration such
+                                  as 5s.
                                 type: string
                               url:
-                                description: URL is the URL to check.
+                                description: URL the hosting tunneler requests.
                                 type: string
                             required:
                             - actions
@@ -241,35 +262,42 @@ spec:
                             type: object
                           type: array
                         listenOptions:
-                          description: ListenOptions defines listen options.
+                          description: |-
+                            ListenOptions say how the hosting tunneler offers the service to the
+                            network.
                           properties:
                             bindUsingEdgeIdentity:
-                              description: BindUsingEdgeIdentity indicates whether
-                                to bind using edge identity.
+                              description: |-
+                                BindUsingEdgeIdentity offers the service under the name of the hosting
+                                identity, so that a client can dial one host among several.
                               type: boolean
                             connectTimeout:
-                              description: ConnectTimeout is the connection timeout
-                                (e.g., "5s").
+                              description: |-
+                                ConnectTimeout is how long the hosting tunneler waits for the
+                                destination to accept a connection, as a duration such as 5s.
                               type: string
                             cost:
                               default: 0
-                              description: Cost is the cost for this listener.
+                              description: 'Cost of the terminator: Ziti prefers cheaper
+                                terminators.'
                               format: int32
                               maximum: 65535
                               minimum: 0
                               type: integer
                             maxConnections:
                               default: 65535
-                              description: MaxConnections is the maximum number of
-                                connections.
+                              description: |-
+                                MaxConnections is the number of connections to edge routers the hosting
+                                tunneler listens for the service on.
                               format: int32
                               maximum: 65535
                               minimum: 1
                               type: integer
                             precedence:
                               default: default
-                              description: Precedence is the precedence level (default,
-                                required, failed).
+                              description: |-
+                                Precedence of the terminator: one with required is used before one with
+                                default, and one with failed only when nothing else is left.
                               enum:
                               - default
                               - required
@@ -277,41 +305,49 @@ spec:
                               type: string
                           type: object
                         port:
-                          description: Port is the host port.
+                          description: |-
+                            Port the hosting tunneler connects to. Leave it out when forwardPort is
+                            set.
                           format: int32
                           maximum: 65535
                           minimum: 1
                           type: integer
                         portChecks:
-                          description: PortChecks is a list of port health checks.
+                          description: |-
+                            PortChecks are health checks the hosting tunneler makes by opening a TCP
+                            connection. Their actions change how its terminator is offered.
                           items:
                             description: PortCheck defines a port health check.
                             properties:
                               actions:
-                                description: Actions are the actions to take on check
-                                  results.
+                                description: Actions to take on the results of the
+                                  check.
                                 items:
                                   description: CheckAction defines an action for health
                                     checks.
                                   properties:
                                     action:
-                                      description: Action is the action to take (mark
-                                        unhealthy, mark healthy, send event, increase
-                                        cost N, decrease cost N).
+                                      description: |-
+                                        Action to take: "mark unhealthy" stops offering the terminator, "mark
+                                        healthy" offers it again, "increase cost N" and "decrease cost N" change
+                                        its cost, "send event" reports the result to the controller.
                                       type: string
                                     consecutiveEvents:
                                       default: 1
-                                      description: ConsecutiveEvents is the number
-                                        of consecutive events required.
+                                      description: |-
+                                        ConsecutiveEvents is how many results in a row it takes before the
+                                        action runs.
                                       format: int32
                                       type: integer
                                     duration:
-                                      description: Duration is the duration for the
-                                        action.
+                                      description: |-
+                                        Duration is how long the results must have lasted before the action
+                                        runs, as a duration such as 30s.
                                       type: string
                                     trigger:
-                                      description: Trigger is the trigger condition
-                                        (pass, fail, change).
+                                      description: |-
+                                        Trigger says which results run the action: checks that pass, checks that
+                                        fail, or a change from one to the other.
                                       enum:
                                       - pass
                                       - fail
@@ -324,14 +360,17 @@ spec:
                                   type: object
                                 type: array
                               address:
-                                description: Address is the address to check.
+                                description: Address the hosting tunneler connects
+                                  to, as host:port.
                                 type: string
                               interval:
-                                description: Interval is the check interval (e.g.,
-                                  "10s").
+                                description: Interval between two checks, as a duration
+                                  such as 10s.
                                 type: string
                               timeout:
-                                description: Timeout is the check timeout (e.g., "5s").
+                                description: |-
+                                  Timeout after which a check without an answer fails, as a duration such
+                                  as 5s.
                                 type: string
                             required:
                             - actions
@@ -341,20 +380,23 @@ spec:
                             type: object
                           type: array
                         protocol:
-                          description: Protocol is the host protocol (tcp, udp).
+                          description: |-
+                            Protocol the hosting tunneler connects with: tcp or udp. Leave it out
+                            when forwardProtocol is set.
                           enum:
                           - tcp
                           - udp
                           type: string
                         proxy:
-                          description: Proxy defines proxy configuration.
+                          description: Proxy makes the hosting tunneler connect through
+                            a proxy.
                           properties:
                             address:
-                              description: Address is the proxy address.
+                              description: Address of the proxy, as host:port.
                               type: string
                             type:
                               default: http
-                              description: Type is the proxy type (e.g., "http").
+                              description: Type of the proxy. Ziti knows http.
                               enum:
                               - http
                               type: string
@@ -450,26 +492,29 @@ spec:
                         one terminator of a host.v2 config.
                       properties:
                         address:
-                          description: Address is the host address.
+                          description: |-
+                            Address is the host name or IP address the hosting tunneler connects to.
+                            Leave it out when forwardAddress is set.
                           type: string
                         allowedAddresses:
-                          description: AllowedAddresses is a list of addresses that
-                            can be forwarded.
+                          description: |-
+                            AllowedAddresses are the IP addresses, CIDR ranges and host names
+                            forwardAddress may connect to.
                           items:
                             type: string
                           type: array
                         allowedPortRanges:
-                          description: AllowedPortRanges is a list of port ranges
-                            that can be forwarded.
+                          description: AllowedPortRanges are the ports forwardPort
+                            may connect to.
                           items:
                             description: PortRange defines a range of ports.
                             properties:
                               high:
-                                description: High is the high port number.
+                                description: High is the last port of the range.
                                 format: int32
                                 type: integer
                               low:
-                                description: Low is the low port number.
+                                description: Low is the first port of the range.
                                 format: int32
                                 type: integer
                             required:
@@ -478,38 +523,46 @@ spec:
                             type: object
                           type: array
                         allowedProtocols:
-                          description: AllowedProtocols is a list of protocols that
-                            can be forwarded (tcp, udp).
+                          description: |-
+                            AllowedProtocols are the protocols forwardProtocol may connect with:
+                            tcp, udp.
                           items:
                             type: string
                           type: array
                         allowedSourceAddresses:
-                          description: AllowedSourceAddresses is a list of source
-                            addresses that can be forwarded.
+                          description: |-
+                            AllowedSourceAddresses are the addresses the hosting tunneler may
+                            connect from when the intercept config of the service sets sourceIp.
                           items:
                             type: string
                           type: array
                         forwardAddress:
-                          description: ForwardAddress indicates whether to forward
-                            allowed addresses.
+                          description: |-
+                            ForwardAddress connects to the address the client asked for, if
+                            allowedAddresses has it.
                           type: boolean
                         forwardAddressTranslations:
-                          description: ForwardAddressTranslations is a list of address
-                            translations to forward.
+                          description: |-
+                            ForwardAddressTranslations move the address the client asked for into
+                            another range before the hosting tunneler connects.
                           items:
                             description: ForwardAddressTranslation defines an address
                               translation rule.
                             properties:
                               from:
-                                description: From is the source address pattern.
+                                description: From is the range of addresses clients
+                                  ask for, in CIDR notation.
                                 type: string
                               prefixLength:
-                                description: PrefixLength is the prefix length for
-                                  the translation.
+                                description: |-
+                                  PrefixLength is the length of the prefix that is replaced: the bits
+                                  after it are kept.
                                 format: int32
                                 type: integer
                               to:
-                                description: To is the destination address pattern.
+                                description: |-
+                                  To is the range the hosting tunneler connects to instead, in CIDR
+                                  notation.
                                 type: string
                             required:
                             - from
@@ -518,43 +571,51 @@ spec:
                             type: object
                           type: array
                         forwardPort:
-                          description: ForwardPort indicates whether to forward allowed
-                            port ranges.
+                          description: |-
+                            ForwardPort connects to the port the client asked for, if
+                            allowedPortRanges has it.
                           type: boolean
                         forwardProtocol:
-                          description: ForwardProtocol indicates whether to forward
-                            allowed protocols.
+                          description: |-
+                            ForwardProtocol connects with the protocol the client used, if
+                            allowedProtocols has it.
                           type: boolean
                         httpChecks:
-                          description: HTTPChecks is a list of HTTP health checks.
+                          description: |-
+                            HTTPChecks are health checks the hosting tunneler makes with HTTP
+                            requests. Their actions change how its terminator is offered.
                           items:
                             description: HTTPCheck defines an HTTP health check.
                             properties:
                               actions:
-                                description: Actions are the actions to take on check
-                                  results.
+                                description: Actions to take on the results of the
+                                  check.
                                 items:
                                   description: CheckAction defines an action for health
                                     checks.
                                   properties:
                                     action:
-                                      description: Action is the action to take (mark
-                                        unhealthy, mark healthy, send event, increase
-                                        cost N, decrease cost N).
+                                      description: |-
+                                        Action to take: "mark unhealthy" stops offering the terminator, "mark
+                                        healthy" offers it again, "increase cost N" and "decrease cost N" change
+                                        its cost, "send event" reports the result to the controller.
                                       type: string
                                     consecutiveEvents:
                                       default: 1
-                                      description: ConsecutiveEvents is the number
-                                        of consecutive events required.
+                                      description: |-
+                                        ConsecutiveEvents is how many results in a row it takes before the
+                                        action runs.
                                       format: int32
                                       type: integer
                                     duration:
-                                      description: Duration is the duration for the
-                                        action.
+                                      description: |-
+                                        Duration is how long the results must have lasted before the action
+                                        runs, as a duration such as 30s.
                                       type: string
                                     trigger:
-                                      description: Trigger is the trigger condition
-                                        (pass, fail, change).
+                                      description: |-
+                                        Trigger says which results run the action: checks that pass, checks that
+                                        fail, or a change from one to the other.
                                       enum:
                                       - pass
                                       - fail
@@ -567,27 +628,27 @@ spec:
                                   type: object
                                 type: array
                               body:
-                                description: Body is the request body.
+                                description: Body of the request.
                                 type: string
                               expectInBody:
-                                description: ExpectInBody is the expected string in
-                                  response body.
+                                description: ExpectInBody is text the response of
+                                  a check that passes contains.
                                 type: string
                               expectStatus:
                                 default: 200
-                                description: ExpectStatus is the expected HTTP status
-                                  code.
+                                description: ExpectStatus is the status code of a
+                                  check that passes.
                                 format: int32
                                 maximum: 599
                                 minimum: 100
                                 type: integer
                               interval:
-                                description: Interval is the check interval (e.g.,
-                                  "10s").
+                                description: Interval between two checks, as a duration
+                                  such as 10s.
                                 type: string
                               method:
-                                description: Method is the HTTP method (GET, PUT,
-                                  POST, PATCH).
+                                description: 'Method of the request: GET, PUT, POST
+                                  or PATCH.'
                                 enum:
                                 - GET
                                 - PUT
@@ -595,10 +656,12 @@ spec:
                                 - PATCH
                                 type: string
                               timeout:
-                                description: Timeout is the check timeout (e.g., "5s").
+                                description: |-
+                                  Timeout after which a check without an answer fails, as a duration such
+                                  as 5s.
                                 type: string
                               url:
-                                description: URL is the URL to check.
+                                description: URL the hosting tunneler requests.
                                 type: string
                             required:
                             - actions
@@ -609,35 +672,42 @@ spec:
                             type: object
                           type: array
                         listenOptions:
-                          description: ListenOptions defines listen options.
+                          description: |-
+                            ListenOptions say how the hosting tunneler offers the service to the
+                            network.
                           properties:
                             bindUsingEdgeIdentity:
-                              description: BindUsingEdgeIdentity indicates whether
-                                to bind using edge identity.
+                              description: |-
+                                BindUsingEdgeIdentity offers the service under the name of the hosting
+                                identity, so that a client can dial one host among several.
                               type: boolean
                             connectTimeout:
-                              description: ConnectTimeout is the connection timeout
-                                (e.g., "5s").
+                              description: |-
+                                ConnectTimeout is how long the hosting tunneler waits for the
+                                destination to accept a connection, as a duration such as 5s.
                               type: string
                             cost:
                               default: 0
-                              description: Cost is the cost for this listener.
+                              description: 'Cost of the terminator: Ziti prefers cheaper
+                                terminators.'
                               format: int32
                               maximum: 65535
                               minimum: 0
                               type: integer
                             maxConnections:
                               default: 65535
-                              description: MaxConnections is the maximum number of
-                                connections.
+                              description: |-
+                                MaxConnections is the number of connections to edge routers the hosting
+                                tunneler listens for the service on.
                               format: int32
                               maximum: 65535
                               minimum: 1
                               type: integer
                             precedence:
                               default: default
-                              description: Precedence is the precedence level (default,
-                                required, failed).
+                              description: |-
+                                Precedence of the terminator: one with required is used before one with
+                                default, and one with failed only when nothing else is left.
                               enum:
                               - default
                               - required
@@ -645,41 +715,49 @@ spec:
                               type: string
                           type: object
                         port:
-                          description: Port is the host port.
+                          description: |-
+                            Port the hosting tunneler connects to. Leave it out when forwardPort is
+                            set.
                           format: int32
                           maximum: 65535
                           minimum: 1
                           type: integer
                         portChecks:
-                          description: PortChecks is a list of port health checks.
+                          description: |-
+                            PortChecks are health checks the hosting tunneler makes by opening a TCP
+                            connection. Their actions change how its terminator is offered.
                           items:
                             description: PortCheck defines a port health check.
                             properties:
                               actions:
-                                description: Actions are the actions to take on check
-                                  results.
+                                description: Actions to take on the results of the
+                                  check.
                                 items:
                                   description: CheckAction defines an action for health
                                     checks.
                                   properties:
                                     action:
-                                      description: Action is the action to take (mark
-                                        unhealthy, mark healthy, send event, increase
-                                        cost N, decrease cost N).
+                                      description: |-
+                                        Action to take: "mark unhealthy" stops offering the terminator, "mark
+                                        healthy" offers it again, "increase cost N" and "decrease cost N" change
+                                        its cost, "send event" reports the result to the controller.
                                       type: string
                                     consecutiveEvents:
                                       default: 1
-                                      description: ConsecutiveEvents is the number
-                                        of consecutive events required.
+                                      description: |-
+                                        ConsecutiveEvents is how many results in a row it takes before the
+                                        action runs.
                                       format: int32
                                       type: integer
                                     duration:
-                                      description: Duration is the duration for the
-                                        action.
+                                      description: |-
+                                        Duration is how long the results must have lasted before the action
+                                        runs, as a duration such as 30s.
                                       type: string
                                     trigger:
-                                      description: Trigger is the trigger condition
-                                        (pass, fail, change).
+                                      description: |-
+                                        Trigger says which results run the action: checks that pass, checks that
+                                        fail, or a change from one to the other.
                                       enum:
                                       - pass
                                       - fail
@@ -692,14 +770,17 @@ spec:
                                   type: object
                                 type: array
                               address:
-                                description: Address is the address to check.
+                                description: Address the hosting tunneler connects
+                                  to, as host:port.
                                 type: string
                               interval:
-                                description: Interval is the check interval (e.g.,
-                                  "10s").
+                                description: Interval between two checks, as a duration
+                                  such as 10s.
                                 type: string
                               timeout:
-                                description: Timeout is the check timeout (e.g., "5s").
+                                description: |-
+                                  Timeout after which a check without an answer fails, as a duration such
+                                  as 5s.
                                 type: string
                             required:
                             - actions
@@ -709,20 +790,23 @@ spec:
                             type: object
                           type: array
                         protocol:
-                          description: Protocol is the host protocol (tcp, udp).
+                          description: |-
+                            Protocol the hosting tunneler connects with: tcp or udp. Leave it out
+                            when forwardProtocol is set.
                           enum:
                           - tcp
                           - udp
                           type: string
                         proxy:
-                          description: Proxy defines proxy configuration.
+                          description: Proxy makes the hosting tunneler connect through
+                            a proxy.
                           properties:
                             address:
-                              description: Address is the proxy address.
+                              description: Address of the proxy, as host:port.
                               type: string
                             type:
                               default: http
-                              description: Type is the proxy type (e.g., "http").
+                              description: Type of the proxy. Ziti knows http.
                               enum:
                               - http
                               type: string

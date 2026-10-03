@@ -32,7 +32,8 @@ type PostureCheckOSParameters struct {
 	// +listType=map
 	// +listMapKey=type
 	OperatingSystems []OperatingSystem `json:"operatingSystems"`
-	// RoleAttributes for the posture check.
+	// RoleAttributes are the attributes service policies select the posture
+	// check by, as "#attribute".
 	// +optional
 	RoleAttributes []string `json:"roleAttributes,omitempty"`
 	// Tags is a map of tags.
@@ -58,7 +59,8 @@ type PostureCheckOSObservation struct {
 	UpdatedAt        string            `json:"updatedAt,omitempty"`
 }
 
-// PostureCheckOS is the top level Ziti OS Posture Check resource.
+// PostureCheckOS is a Ziti posture check that a device passes if it runs one
+// of the listed operating systems in one of the listed versions.
 // +kubebuilder:object:root=true
 // +kubebuilder:subresource:status
 // +kubebuilder:printcolumn:name="NAME",type="string",JSONPath=`.spec.forProvider.name`

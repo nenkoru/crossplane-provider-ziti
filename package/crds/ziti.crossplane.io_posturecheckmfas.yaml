@@ -34,7 +34,9 @@ spec:
     name: v1alpha1
     schema:
       openAPIV3Schema:
-        description: PostureCheckMFA is the top level Ziti MFA Posture Check resource.
+        description: |-
+          PostureCheckMFA is a Ziti posture check that an identity passes while it is
+          authenticated with a second factor.
         properties:
           apiVersion:
             description: |-
@@ -77,7 +79,9 @@ spec:
                       up.
                     type: boolean
                   roleAttributes:
-                    description: RoleAttributes for the posture check.
+                    description: |-
+                      RoleAttributes are the attributes service policies select the posture
+                      check by, as "#attribute".
                     items:
                       type: string
                     type: array

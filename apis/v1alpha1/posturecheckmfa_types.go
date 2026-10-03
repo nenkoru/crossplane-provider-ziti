@@ -15,7 +15,8 @@ type PostureCheckMFASpec struct {
 type PostureCheckMFAParameters struct {
 	// Name of the posture check.
 	Name string `json:"name"`
-	// RoleAttributes for the posture check.
+	// RoleAttributes are the attributes service policies select the posture
+	// check by, as "#attribute".
 	// +optional
 	RoleAttributes []string `json:"roleAttributes,omitempty"`
 	// TimeoutSeconds for the MFA check. -1 means no timeout.
@@ -58,7 +59,8 @@ type PostureCheckMFAObservation struct {
 	UpdatedAt             string            `json:"updatedAt,omitempty"`
 }
 
-// PostureCheckMFA is the top level Ziti MFA Posture Check resource.
+// PostureCheckMFA is a Ziti posture check that an identity passes while it is
+// authenticated with a second factor.
 // +kubebuilder:object:root=true
 // +kubebuilder:subresource:status
 // +kubebuilder:printcolumn:name="NAME",type="string",JSONPath=`.spec.forProvider.name`

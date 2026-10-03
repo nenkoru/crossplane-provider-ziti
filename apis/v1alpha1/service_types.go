@@ -52,31 +52,40 @@ type ServiceParameters struct {
 	// Name of the service.
 	Name string `json:"name"`
 
-	// EncryptionRequired indicates whether encryption is required for the service.
+	// EncryptionRequired makes the clients and the hosts of the service
+	// encrypt its traffic end to end, on top of the encryption between
+	// routers.
 	// +optional
 	// +kubebuilder:default=true
 	EncryptionRequired *bool `json:"encryptionRequired,omitempty"`
 
-	// MaxIdleTimeMillis is the maximum idle time in milliseconds.
+	// MaxIdleTimeMillis closes a circuit of the service that carried no
+	// traffic for so many milliseconds. Zero keeps idle circuits open.
 	// +optional
 	MaxIdleTimeMillis *int64 `json:"maxIdleTimeMillis,omitempty"`
 
-	// TerminatorStrategy defines how terminators are selected.
-	// Valid values: smartrouting, weighted, random, ha
+	// TerminatorStrategy says which of the terminators that host the service
+	// gets a new connection: smartrouting takes the one with the cheapest
+	// route, weighted and random spread the connections, ha keeps to one and
+	// fails over to the others.
 	// +optional
 	// +kubebuilder:validation:Enum=smartrouting;weighted;random;ha
 	TerminatorStrategy *TerminatorStrategy `json:"terminatorStrategy,omitempty"`
 
-	// Configs is a list of names or IDs of the configs associated with this
-	// service. Names are resolved to IDs.
+	// Configs are the names or IDs of the configs of the service, one per
+	// config type: what the tunnelers of clients intercept (intercept.v1) and
+	// where the tunnelers of hosts send the traffic (host.v1 or host.v2).
+	// Names are resolved to IDs.
 	// +optional
 	Configs []string `json:"configs,omitempty"`
 
-	// RoleAttributes is a list of role attributes for the service.
+	// RoleAttributes are the attributes policies select the service by, as
+	// "#attribute".
 	// +optional
 	RoleAttributes []string `json:"roleAttributes,omitempty"`
 
-	// Tags is a map of tags for the service.
+	// Tags are free-form labels Ziti stores with the service. They do not
+	// affect access or routing.
 	// +optional
 	Tags map[string]string `json:"tags,omitempty"`
 }
@@ -92,7 +101,8 @@ type ServiceObservation struct {
 	// EncryptionRequired indicates whether encryption is required.
 	EncryptionRequired bool `json:"encryptionRequired,omitempty"`
 
-	// MaxIdleTimeMillis is the maximum idle time in milliseconds.
+	// MaxIdleTimeMillis closes a circuit of the service that carried no
+	// traffic for so many milliseconds. Zero keeps idle circuits open.
 	MaxIdleTimeMillis int64 `json:"maxIdleTimeMillis,omitempty"`
 
 	// TerminatorStrategy is the current terminator strategy.
@@ -114,7 +124,9 @@ type ServiceObservation struct {
 	UpdatedAt string `json:"updatedAt,omitempty"`
 }
 
-// Service is the Schema for the Services API.
+// Service is a Ziti service: something identities connect to through the
+// network. Service policies say who may dial and who may host it, its configs
+// say what tunnelers intercept and where they send the traffic.
 // +kubebuilder:object:root=true
 // +kubebuilder:subresource:status
 // +kubebuilder:printcolumn:name="NAME",type=string,JSONPath=`.spec.forProvider.name`

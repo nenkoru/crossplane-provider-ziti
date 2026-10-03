@@ -32,7 +32,8 @@ type ServiceEdgeRouterPolicyParameters struct {
 	// Name of the policy.
 	Name string `json:"name"`
 
-	// Semantic is the matching semantic (AnyOf or AllOf).
+	// Semantic says how the "#attribute" selectors of one list combine: AnyOf
+	// selects what has any of the attributes, AllOf what has all of them.
 	// +optional
 	// +kubebuilder:default=AllOf
 	// +kubebuilder:validation:Enum=AnyOf;AllOf
@@ -67,7 +68,8 @@ type ServiceEdgeRouterPolicyObservation struct {
 	UpdatedAt       string            `json:"updatedAt,omitempty"`
 }
 
-// ServiceEdgeRouterPolicy is the Schema for the ServiceEdgeRouterPolicies API.
+// ServiceEdgeRouterPolicy is a Ziti service edge router policy: it says
+// through which edge routers a service can be reached.
 // +kubebuilder:object:root=true
 // +kubebuilder:subresource:status
 // +kubebuilder:printcolumn:name="NAME",type=string,JSONPath=`.spec.forProvider.name`

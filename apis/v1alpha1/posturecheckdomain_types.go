@@ -21,7 +21,8 @@ type PostureCheckDomainParameters struct {
 	// duplicates do not matter.
 	// +kubebuilder:validation:MinItems=1
 	Domains []string `json:"domains"`
-	// RoleAttributes for the posture check.
+	// RoleAttributes are the attributes service policies select the posture
+	// check by, as "#attribute".
 	// +optional
 	RoleAttributes []string `json:"roleAttributes,omitempty"`
 	// Tags is a map of tags.
@@ -47,7 +48,8 @@ type PostureCheckDomainObservation struct {
 	UpdatedAt      string            `json:"updatedAt,omitempty"`
 }
 
-// PostureCheckDomain is the top level Ziti Windows Domain Posture Check resource.
+// PostureCheckDomain is a Ziti posture check that a Windows device passes if
+// it is joined to one of the listed domains.
 // +kubebuilder:object:root=true
 // +kubebuilder:subresource:status
 // +kubebuilder:printcolumn:name="NAME",type="string",JSONPath=`.spec.forProvider.name`

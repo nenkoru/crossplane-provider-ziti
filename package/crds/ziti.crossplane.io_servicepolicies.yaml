@@ -37,7 +37,9 @@ spec:
     name: v1alpha1
     schema:
       openAPIV3Schema:
-        description: ServicePolicy is the Schema for the ServicePolicies API.
+        description: |-
+          ServicePolicy is a Ziti service policy: it lets identities dial or host
+          services, and may require that their devices pass posture checks.
         properties:
           apiVersion:
             description: |-
@@ -85,7 +87,9 @@ spec:
                     type: array
                   semantic:
                     default: AllOf
-                    description: Semantic is the matching semantic (AnyOf or AllOf).
+                    description: |-
+                      Semantic says how the "#attribute" selectors of one list combine: AnyOf
+                      selects what has any of the attributes, AllOf what has all of them.
                     enum:
                     - AnyOf
                     - AllOf
@@ -104,7 +108,9 @@ spec:
                     description: Tags is a map of tags.
                     type: object
                   type:
-                    description: Type is the type of policy (Dial or Bind).
+                    description: |-
+                      Type says what the policy grants: Dial lets the identities connect to
+                      the services, Bind lets them host the services.
                     enum:
                     - Dial
                     - Bind

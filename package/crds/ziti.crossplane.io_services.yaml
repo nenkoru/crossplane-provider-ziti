@@ -34,7 +34,10 @@ spec:
     name: v1alpha1
     schema:
       openAPIV3Schema:
-        description: Service is the Schema for the Services API.
+        description: |-
+          Service is a Ziti service: something identities connect to through the
+          network. Service policies say who may dial and who may host it, its configs
+          say what tunnelers intercept and where they send the traffic.
         properties:
           apiVersion:
             description: |-
@@ -62,38 +65,49 @@ spec:
                 properties:
                   configs:
                     description: |-
-                      Configs is a list of names or IDs of the configs associated with this
-                      service. Names are resolved to IDs.
+                      Configs are the names or IDs of the configs of the service, one per
+                      config type: what the tunnelers of clients intercept (intercept.v1) and
+                      where the tunnelers of hosts send the traffic (host.v1 or host.v2).
+                      Names are resolved to IDs.
                     items:
                       type: string
                     type: array
                   encryptionRequired:
                     default: true
-                    description: EncryptionRequired indicates whether encryption is
-                      required for the service.
+                    description: |-
+                      EncryptionRequired makes the clients and the hosts of the service
+                      encrypt its traffic end to end, on top of the encryption between
+                      routers.
                     type: boolean
                   maxIdleTimeMillis:
-                    description: MaxIdleTimeMillis is the maximum idle time in milliseconds.
+                    description: |-
+                      MaxIdleTimeMillis closes a circuit of the service that carried no
+                      traffic for so many milliseconds. Zero keeps idle circuits open.
                     format: int64
                     type: integer
                   name:
                     description: Name of the service.
                     type: string
                   roleAttributes:
-                    description: RoleAttributes is a list of role attributes for the
-                      service.
+                    description: |-
+                      RoleAttributes are the attributes policies select the service by, as
+                      "#attribute".
                     items:
                       type: string
                     type: array
                   tags:
                     additionalProperties:
                       type: string
-                    description: Tags is a map of tags for the service.
+                    description: |-
+                      Tags are free-form labels Ziti stores with the service. They do not
+                      affect access or routing.
                     type: object
                   terminatorStrategy:
                     description: |-
-                      TerminatorStrategy defines how terminators are selected.
-                      Valid values: smartrouting, weighted, random, ha
+                      TerminatorStrategy says which of the terminators that host the service
+                      gets a new connection: smartrouting takes the one with the cheapest
+                      route, weighted and random spread the connections, ha keeps to one and
+                      fails over to the others.
                     enum:
                     - smartrouting
                     - weighted
@@ -184,7 +198,9 @@ spec:
                     description: ID is the unique identifier of the service.
                     type: string
                   maxIdleTimeMillis:
-                    description: MaxIdleTimeMillis is the maximum idle time in milliseconds.
+                    description: |-
+                      MaxIdleTimeMillis closes a circuit of the service that carried no
+                      traffic for so many milliseconds. Zero keeps idle circuits open.
                     format: int64
                     type: integer
                   name:
