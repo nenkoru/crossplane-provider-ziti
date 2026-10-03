@@ -68,10 +68,11 @@ test-integration: $(KIND) $(KUBECTL) $(CROSSPLANE_CLI) $(HELM3)
 	@$(OK) integration tests passed
 
 # Run the end-to-end test: the provider out-of-cluster against a kind cluster
-# and an OpenZiti controller started from ziti-docker-compose.yml.
+# with Crossplane and an OpenZiti controller started from
+# ziti-docker-compose.yml.
 e2e.ziti:
 	@$(INFO) running end-to-end tests against OpenZiti
-	@$(ROOT_DIR)/test/e2e/e2e.sh all || $(FAIL)
+	@E2E_CROSSPLANE=true $(ROOT_DIR)/test/e2e/e2e.sh all || $(FAIL)
 	@$(OK) end-to-end tests passed
 
 # Until ci.yml gets a job of its own for the end-to-end test, the unit-tests

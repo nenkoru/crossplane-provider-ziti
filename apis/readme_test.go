@@ -23,6 +23,7 @@ import (
 	"strings"
 	"testing"
 
+	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	"k8s.io/apiextensions-apiserver/pkg/apiserver/validation"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -99,6 +100,34 @@ func TestReadme(t *testing.T) {
 			if err := yaml.UnmarshalStrict([]byte(doc), typed); err != nil {
 				t.Errorf("README: %s %q has unknown fields: %v", u.GetKind(), u.GetName(), err)
 			}
+		}
+	}
+}
+
+// TestLifecycleStage checks that the lifecycle stage of the end-to-end test,
+// which changes and deletes entities in Ziti behind the provider's back, has
+// a row for every kind of the provider.
+func TestLifecycleStage(t *testing.T) {
+	script, err := os.ReadFile(e2e)
+	if err != nil {
+		t.Fatalf("cannot read the end-to-end test: %v", err)
+	}
+
+	for _, path := range yamlFiles(t, crdDir) {
+		raw, err := os.ReadFile(path) //nolint:gosec // Reads generated manifests of this repository.
+		if err != nil {
+			t.Fatalf("cannot read %s: %v", path, err)
+		}
+		crd := &apiextensionsv1.CustomResourceDefinition{}
+		if err := yaml.Unmarshal(raw, crd); err != nil {
+			t.Fatalf("cannot parse %s: %v", path, err)
+		}
+		names := crd.Spec.Names
+		if strings.Contains(names.Kind, "ProviderConfig") {
+			continue
+		}
+		if !strings.Contains(string(script), "\trow "+names.Plural+" ") {
+			t.Errorf("the lifecycle stage of the end-to-end test has no row for kind %s (%s)", names.Kind, names.Plural)
 		}
 	}
 }
