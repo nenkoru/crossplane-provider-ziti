@@ -1,0 +1,63 @@
+# PublishedService is what a team asks for: "make this address reachable in
+# the Ziti network under that name". The Composition turns it into the six
+# Ziti entities that takes.
+apiVersion: apiextensions.crossplane.io/v2
+kind: CompositeResourceDefinition
+metadata:
+  name: publishedservices.platform.example.org
+spec:
+  scope: Namespaced
+  group: platform.example.org
+  names:
+    kind: PublishedService
+    plural: publishedservices
+  versions:
+    - name: v1alpha1
+      served: true
+      referenceable: true
+      schema:
+        openAPIV3Schema:
+          type: object
+          properties:
+            spec:
+              type: object
+              required:
+                - upstream
+                - intercept
+              properties:
+                upstream:
+                  description: Where the hosting tunneler sends the traffic.
+                  type: object
+                  required:
+                    - address
+                    - port
+                  properties:
+                    address:
+                      type: string
+                    port:
+                      type: integer
+                      minimum: 1
+                      maximum: 65535
+                intercept:
+                  description: The name and the port the clients connect to.
+                  type: object
+                  required:
+                    - address
+                    - port
+                  properties:
+                    address:
+                      type: string
+                    port:
+                      type: integer
+                      minimum: 1
+                      maximum: 65535
+                edgeRouterRole:
+                  description: The edge routers the service is available on, as a Ziti role.
+                  type: string
+                  default: "#all"
+            status:
+              type: object
+              properties:
+                serviceId:
+                  description: The ID of the service in Ziti.
+                  type: string

@@ -1,0 +1,126 @@
+# Publishing a service: a PostgreSQL database that is reachable at
+# postgres.internal:5432 from the host that runs a tunneler becomes
+# orders-db.ziti:5432 for the clients of the network.
+#
+#   ConfigHostV1       where the hosting tunneler sends the traffic
+#   ConfigInterceptV1  what the client tunnelers intercept
+#   Service            the service, with both configs
+#   ServicePolicy      who may dial it, and who may host it
+#   Identity           one client and one host, each with an enrollment token
+#
+# The policies name the service by its name and the identities by a role
+# attribute, so that more clients and hosts join by getting the attribute.
+apiVersion: ziti.crossplane.io/v1alpha1
+kind: ConfigHostV1
+metadata:
+  name: orders-db-host
+spec:
+  providerConfigRef:
+    kind: ProviderConfig
+    name: default
+  forProvider:
+    name: orders-db-host
+    address: postgres.internal
+    port: 5432
+    protocol: tcp
+---
+apiVersion: ziti.crossplane.io/v1alpha1
+kind: ConfigInterceptV1
+metadata:
+  name: orders-db-intercept
+spec:
+  providerConfigRef:
+    kind: ProviderConfig
+    name: default
+  forProvider:
+    name: orders-db-intercept
+    addresses:
+      - orders-db.ziti
+    protocols:
+      - tcp
+    portRanges:
+      - low: 5432
+        high: 5432
+---
+apiVersion: ziti.crossplane.io/v1alpha1
+kind: Service
+metadata:
+  name: orders-db
+spec:
+  providerConfigRef:
+    kind: ProviderConfig
+    name: default
+  forProvider:
+    name: orders-db
+    configs:
+      - orders-db-host
+      - orders-db-intercept
+    roleAttributes:
+      - databases
+---
+apiVersion: ziti.crossplane.io/v1alpha1
+kind: ServicePolicy
+metadata:
+  name: orders-db-dial
+spec:
+  providerConfigRef:
+    kind: ProviderConfig
+    name: default
+  forProvider:
+    name: orders-db-dial
+    type: Dial
+    semantic: AnyOf
+    serviceRoles:
+      - "@orders-db"
+    identityRoles:
+      - "#orders-db-clients"
+---
+apiVersion: ziti.crossplane.io/v1alpha1
+kind: ServicePolicy
+metadata:
+  name: orders-db-bind
+spec:
+  providerConfigRef:
+    kind: ProviderConfig
+    name: default
+  forProvider:
+    name: orders-db-bind
+    type: Bind
+    semantic: AnyOf
+    serviceRoles:
+      - "@orders-db"
+    identityRoles:
+      - "#orders-db-hosts"
+---
+# The application that connects to the database. Its enrollment token is in
+# the Secret orders-api-enrollment under the key enrollmentToken.
+apiVersion: ziti.crossplane.io/v1alpha1
+kind: Identity
+metadata:
+  name: orders-api
+spec:
+  providerConfigRef:
+    kind: ProviderConfig
+    name: default
+  writeConnectionSecretToRef:
+    name: orders-api-enrollment
+  forProvider:
+    name: orders-api
+    roleAttributes:
+      - orders-db-clients
+---
+# The tunneler next to the database.
+apiVersion: ziti.crossplane.io/v1alpha1
+kind: Identity
+metadata:
+  name: orders-db-tunnel
+spec:
+  providerConfigRef:
+    kind: ProviderConfig
+    name: default
+  writeConnectionSecretToRef:
+    name: orders-db-tunnel-enrollment
+  forProvider:
+    name: orders-db-tunnel
+    roleAttributes:
+      - orders-db-hosts

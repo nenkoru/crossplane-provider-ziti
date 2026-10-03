@@ -1,0 +1,218 @@
+# Composes a PublishedService named <name> into:
+#
+#   ConfigHostV1             <name>-host        spec.upstream
+#   ConfigInterceptV1        <name>-intercept   spec.intercept
+#   Service                  <name>             with both configs
+#   ServicePolicy (Dial)     <name>-dial        identities with the attribute <name>-clients
+#   ServicePolicy (Bind)     <name>-bind        identities with the attribute <name>-hosts
+#   ServiceEdgeRouterPolicy  <name>-routers     spec.edgeRouterRole
+#
+# The composed resources use the ProviderConfig "default" of the namespace of
+# the PublishedService.
+apiVersion: apiextensions.crossplane.io/v1
+kind: Composition
+metadata:
+  name: publishedservices.platform.example.org
+spec:
+  compositeTypeRef:
+    apiVersion: platform.example.org/v1alpha1
+    kind: PublishedService
+  mode: Pipeline
+  pipeline:
+    - step: patch-and-transform
+      functionRef:
+        name: function-patch-and-transform
+      input:
+        apiVersion: pt.fn.crossplane.io/v1beta1
+        kind: Resources
+        resources:
+          - name: host
+            base:
+              apiVersion: ziti.crossplane.io/v1alpha1
+              kind: ConfigHostV1
+              spec:
+                providerConfigRef:
+                  kind: ProviderConfig
+                  name: default
+                forProvider:
+                  protocol: tcp
+            patches:
+              - type: FromCompositeFieldPath
+                fromFieldPath: metadata.name
+                toFieldPath: spec.forProvider.name
+                transforms:
+                  - type: string
+                    string:
+                      type: Format
+                      fmt: "%s-host"
+              - type: FromCompositeFieldPath
+                fromFieldPath: spec.upstream.address
+                toFieldPath: spec.forProvider.address
+              - type: FromCompositeFieldPath
+                fromFieldPath: spec.upstream.port
+                toFieldPath: spec.forProvider.port
+          - name: intercept
+            base:
+              apiVersion: ziti.crossplane.io/v1alpha1
+              kind: ConfigInterceptV1
+              spec:
+                providerConfigRef:
+                  kind: ProviderConfig
+                  name: default
+                forProvider:
+                  protocols:
+                    - tcp
+            patches:
+              - type: FromCompositeFieldPath
+                fromFieldPath: metadata.name
+                toFieldPath: spec.forProvider.name
+                transforms:
+                  - type: string
+                    string:
+                      type: Format
+                      fmt: "%s-intercept"
+              - type: FromCompositeFieldPath
+                fromFieldPath: spec.intercept.address
+                toFieldPath: spec.forProvider.addresses[0]
+              - type: FromCompositeFieldPath
+                fromFieldPath: spec.intercept.port
+                toFieldPath: spec.forProvider.portRanges[0].low
+              - type: FromCompositeFieldPath
+                fromFieldPath: spec.intercept.port
+                toFieldPath: spec.forProvider.portRanges[0].high
+          - name: service
+            base:
+              apiVersion: ziti.crossplane.io/v1alpha1
+              kind: Service
+              spec:
+                providerConfigRef:
+                  kind: ProviderConfig
+                  name: default
+                forProvider:
+                  encryptionRequired: true
+            patches:
+              - type: FromCompositeFieldPath
+                fromFieldPath: metadata.name
+                toFieldPath: spec.forProvider.name
+              # The configs are named, and the provider looks up their IDs.
+              - type: FromCompositeFieldPath
+                fromFieldPath: metadata.name
+                toFieldPath: spec.forProvider.configs[0]
+                transforms:
+                  - type: string
+                    string:
+                      type: Format
+                      fmt: "%s-host"
+              - type: FromCompositeFieldPath
+                fromFieldPath: metadata.name
+                toFieldPath: spec.forProvider.configs[1]
+                transforms:
+                  - type: string
+                    string:
+                      type: Format
+                      fmt: "%s-intercept"
+              - type: ToCompositeFieldPath
+                fromFieldPath: status.atProvider.id
+                toFieldPath: status.serviceId
+          - name: dial
+            base:
+              apiVersion: ziti.crossplane.io/v1alpha1
+              kind: ServicePolicy
+              spec:
+                providerConfigRef:
+                  kind: ProviderConfig
+                  name: default
+                forProvider:
+                  type: Dial
+                  semantic: AnyOf
+            patches:
+              - type: FromCompositeFieldPath
+                fromFieldPath: metadata.name
+                toFieldPath: spec.forProvider.name
+                transforms:
+                  - type: string
+                    string:
+                      type: Format
+                      fmt: "%s-dial"
+              - type: FromCompositeFieldPath
+                fromFieldPath: metadata.name
+                toFieldPath: spec.forProvider.serviceRoles[0]
+                transforms:
+                  - type: string
+                    string:
+                      type: Format
+                      fmt: "@%s"
+              - type: FromCompositeFieldPath
+                fromFieldPath: metadata.name
+                toFieldPath: spec.forProvider.identityRoles[0]
+                transforms:
+                  - type: string
+                    string:
+                      type: Format
+                      fmt: "#%s-clients"
+          - name: bind
+            base:
+              apiVersion: ziti.crossplane.io/v1alpha1
+              kind: ServicePolicy
+              spec:
+                providerConfigRef:
+                  kind: ProviderConfig
+                  name: default
+                forProvider:
+                  type: Bind
+                  semantic: AnyOf
+            patches:
+              - type: FromCompositeFieldPath
+                fromFieldPath: metadata.name
+                toFieldPath: spec.forProvider.name
+                transforms:
+                  - type: string
+                    string:
+                      type: Format
+                      fmt: "%s-bind"
+              - type: FromCompositeFieldPath
+                fromFieldPath: metadata.name
+                toFieldPath: spec.forProvider.serviceRoles[0]
+                transforms:
+                  - type: string
+                    string:
+                      type: Format
+                      fmt: "@%s"
+              - type: FromCompositeFieldPath
+                fromFieldPath: metadata.name
+                toFieldPath: spec.forProvider.identityRoles[0]
+                transforms:
+                  - type: string
+                    string:
+                      type: Format
+                      fmt: "#%s-hosts"
+          - name: routers
+            base:
+              apiVersion: ziti.crossplane.io/v1alpha1
+              kind: ServiceEdgeRouterPolicy
+              spec:
+                providerConfigRef:
+                  kind: ProviderConfig
+                  name: default
+                forProvider:
+                  semantic: AnyOf
+            patches:
+              - type: FromCompositeFieldPath
+                fromFieldPath: metadata.name
+                toFieldPath: spec.forProvider.name
+                transforms:
+                  - type: string
+                    string:
+                      type: Format
+                      fmt: "%s-routers"
+              - type: FromCompositeFieldPath
+                fromFieldPath: metadata.name
+                toFieldPath: spec.forProvider.serviceRoles[0]
+                transforms:
+                  - type: string
+                    string:
+                      type: Format
+                      fmt: "@%s"
+              - type: FromCompositeFieldPath
+                fromFieldPath: spec.edgeRouterRole
+                toFieldPath: spec.forProvider.edgeRouterRoles[0]

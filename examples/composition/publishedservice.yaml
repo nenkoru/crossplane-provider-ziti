@@ -1,0 +1,14 @@
+# A published service: wiki.ziti:443 for the clients, served by
+# wiki.internal:8443 behind the hosting tunneler.
+apiVersion: platform.example.org/v1alpha1
+kind: PublishedService
+metadata:
+  name: wiki
+  namespace: default
+spec:
+  upstream:
+    address: wiki.internal
+    port: 8443
+  intercept:
+    address: wiki.ziti
+    port: 443

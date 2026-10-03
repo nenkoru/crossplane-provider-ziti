@@ -1,0 +1,60 @@
+# Adding an edge router at a site and letting identities and services use it.
+#
+#   EdgeRouter               the router, with an enrollment token
+#   EdgeRouterPolicy         which identities may connect through it
+#   ServiceEdgeRouterPolicy  which services are available on it
+#
+# Enroll the router with the token in the Secret site-a-router-enrollment:
+#
+#   kubectl get secret site-a-router-enrollment -o jsonpath='{.data.enrollmentToken}' | base64 -d > site-a-router.jwt
+#   ziti router enroll router.yml --jwt site-a-router.jwt
+apiVersion: ziti.crossplane.io/v1alpha1
+kind: EdgeRouter
+metadata:
+  name: site-a-router
+spec:
+  providerConfigRef:
+    kind: ProviderConfig
+    name: default
+  writeConnectionSecretToRef:
+    name: site-a-router-enrollment
+  forProvider:
+    name: site-a-router
+    # The router also hosts services itself, without a separate tunneler.
+    isTunnelerEnabled: true
+    roleAttributes:
+      - site-a
+---
+# Every identity may connect through the routers of site A.
+apiVersion: ziti.crossplane.io/v1alpha1
+kind: EdgeRouterPolicy
+metadata:
+  name: all-identities-site-a
+spec:
+  providerConfigRef:
+    kind: ProviderConfig
+    name: default
+  forProvider:
+    name: all-identities-site-a
+    semantic: AnyOf
+    edgeRouterRoles:
+      - "#site-a"
+    identityRoles:
+      - "#all"
+---
+# The databases are available on the routers of site A.
+apiVersion: ziti.crossplane.io/v1alpha1
+kind: ServiceEdgeRouterPolicy
+metadata:
+  name: databases-site-a
+spec:
+  providerConfigRef:
+    kind: ProviderConfig
+    name: default
+  forProvider:
+    name: databases-site-a
+    semantic: AnyOf
+    serviceRoles:
+      - "#databases"
+    edgeRouterRoles:
+      - "#site-a"
