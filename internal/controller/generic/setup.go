@@ -43,6 +43,27 @@ func SetupGated[T resource.ModernManaged](mgr ctrl.Manager, o controller.Options
 
 // Setup adds a controller that reconciles the supplied kind.
 func Setup[T resource.ModernManaged](mgr ctrl.Manager, o controller.Options, clients Connecter, kind Kind[T]) error {
+	r, err := NewReconciler(mgr, o, clients, kind)
+	if err != nil {
+		return err
+	}
+
+	//nolint:forcetypeassert // A kind that is not a Kubernetes object is a programming error.
+	object := resource.MustCreateObject(kind.GVK, mgr.GetScheme()).(kube.Object)
+
+	name := managed.ControllerName(schema.GroupKind{Group: kind.GVK.Group, Kind: kind.GVK.Kind}.String())
+	return ctrl.NewControllerManagedBy(mgr).
+		Named(name).
+		WithOptions(o.ForControllerRuntime()).
+		WithEventFilter(resource.DesiredStateChanged()).
+		For(object).
+		Complete(ratelimiter.NewReconciler(name, r, o.GlobalRateLimiter))
+}
+
+// NewReconciler returns the reconciler of managed resources of the supplied
+// kind that Setup adds to the manager. The supplied options are applied
+// after those of the provider.
+func NewReconciler[T resource.ModernManaged](mgr ctrl.Manager, o controller.Options, clients Connecter, kind Kind[T], extra ...managed.ReconcilerOption) (*managed.Reconciler, error) {
 	name := managed.ControllerName(schema.GroupKind{Group: kind.GVK.Group, Kind: kind.GVK.Kind}.String())
 
 	opts := []managed.ReconcilerOption{
@@ -73,19 +94,9 @@ func Setup[T resource.ModernManaged](mgr ctrl.Manager, o controller.Options, cli
 			mgr.GetClient(), o.Logger, o.MetricOptions.MRStateMetrics, kind.List, o.MetricOptions.PollStateMetricInterval,
 		)
 		if err := mgr.Add(stateMetricsRecorder); err != nil {
-			return errors.Wrapf(err, "cannot register MR state metrics recorder for kind %s", kind.GVK.Kind)
+			return nil, errors.Wrapf(err, "cannot register MR state metrics recorder for kind %s", kind.GVK.Kind)
 		}
 	}
 
-	r := managed.NewReconciler(mgr, resource.ManagedKind(kind.GVK), opts...)
-
-	//nolint:forcetypeassert // A kind that is not a Kubernetes object is a programming error.
-	object := resource.MustCreateObject(kind.GVK, mgr.GetScheme()).(kube.Object)
-
-	return ctrl.NewControllerManagedBy(mgr).
-		Named(name).
-		WithOptions(o.ForControllerRuntime()).
-		WithEventFilter(resource.DesiredStateChanged()).
-		For(object).
-		Complete(ratelimiter.NewReconciler(name, r, o.GlobalRateLimiter))
+	return managed.NewReconciler(mgr, resource.ManagedKind(kind.GVK), append(opts, extra...)...), nil
 }
