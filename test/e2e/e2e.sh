@@ -4,8 +4,9 @@
 # The provider runs out-of-cluster against a kind cluster and manages an
 # OpenZiti controller started from ziti-docker-compose.yml. The test applies
 # the manifests in examples/, checks through the Ziti Edge Management API that
-# the entities exist as declared, changes and tampers with them, and checks
-# that deleting the managed resources deletes the entities.
+# the entities exist as declared, changes, tampers with and deletes them
+# behind the provider's back, and checks that deleting the managed resources
+# deletes the entities.
 #
 # Usage:
 #   test/e2e/e2e.sh up      # start OpenZiti, a kind cluster and the provider
@@ -554,6 +555,106 @@ EOF
 	expect_gone "server identity is gone" identities web-server
 	expect_gone "dial policy is gone" service-policies web-service-dial
 	expect_gone "bind policy is gone" service-policies web-service-bind
+}
+
+# recreated <plural> <name> <collection> <old id> succeeds once the managed
+# resource points at an entity with its name that is not the old one.
+recreated() {
+	local id
+	id="$(mr_id "$1" "$2")" || return 1
+	[ -n "${id}" ] && [ "${id}" != "$4" ] || return 1
+	[ "$(ziti_id "$3" "$2")" = "${id}" ]
+}
+
+# test_drift deletes and changes entities of the core kinds in Ziti behind the
+# provider's back, and checks that the provider puts them right: a change is
+# reverted, a deleted entity is created anew under a new ID, what refers to
+# it follows the new ID, and a new enrollment token reaches the connection
+# secret.
+test_drift() {
+	step "Creating the core resources again"
+	apply "${CORE_EXAMPLES[@]}"
+	wait_ready "${CORE_EXAMPLES[@]}"
+
+	local host service dial client old token
+	host="$(mr_id confighostv1s web-service-host)"
+	service="$(mr_id services web-service)"
+	dial="$(mr_id servicepolicies web-service-dial)"
+	client="$(mr_id identities web-client)"
+	[ -n "${host}" ] && [ -n "${service}" ] && [ -n "${dial}" ] && [ -n "${client}" ] || fail "a core resource has no Ziti ID"
+
+	step "Changes made in Ziti to every family of fields are reverted"
+	ziti_patch services "${service}" '{"roleAttributes": ["tampered"], "tags": {"tampered": "yes"}}' || fail "cannot change the service in Ziti"
+	entity_matches services "${service}" '.roleAttributes == ["tampered"]' >/dev/null || fail "could not tamper with the service"
+	ziti_patch configs "${host}" '{"data": {"address": "tampered.local", "port": 9999, "protocol": "udp"}}' || fail "cannot change the host config in Ziti"
+	entity_matches configs "${host}" '.data.address == "tampered.local"' >/dev/null || fail "could not tamper with the host config"
+	ziti_patch service-policies "${dial}" '{"semantic": "AllOf", "identityRoles": ["#tampered"]}' || fail "cannot change the dial policy in Ziti"
+	entity_matches service-policies "${dial}" '.semantic == "AllOf" and .identityRoles == ["#tampered"]' >/dev/null || fail "could not tamper with the dial policy"
+	ziti_patch identities "${client}" '{"appData": {"tampered": "yes"}, "tags": {}}' || fail "cannot change the identity in Ziti"
+	entity_matches identities "${client}" '.appData.tampered == "yes"' >/dev/null || fail "could not tamper with the identity"
+	eventually "service role attributes and tags are restored" entity_matches services "${service}" \
+		'(.roleAttributes | sort) == ["role:api", "role:web"] and .tags == {"env": "production", "team": "platform"}'
+	eventually "host config data is restored" entity_matches configs "${host}" \
+		'.data.address == "web-service.local" and .data.port == 8080 and .data.protocol == "tcp" and .data.listenOptions.precedence == "required"'
+	eventually "dial policy semantic and roles are restored" entity_matches service-policies "${dial}" \
+		'.semantic == "AnyOf" and .identityRoles == ["#web-clients"]'
+	eventually "identity application data and tags are restored" entity_matches identities "${client}" \
+		'(.appData | length) == 0 and .tags == {"team": "platform"}'
+
+	step "Entities deleted in Ziti are created anew"
+	ziti_delete configs "${host}" || fail "cannot delete the host config in Ziti"
+	ziti_delete services "${service}" || fail "cannot delete the service in Ziti"
+	ziti_delete service-policies "${dial}" || fail "cannot delete the dial policy in Ziti"
+	expect_gone "host config is deleted in Ziti" configs web-service-host
+	expect_gone "service is deleted in Ziti" services web-service
+	expect_gone "dial policy is deleted in Ziti" service-policies web-service-dial
+	eventually "host config is created anew" recreated confighostv1s web-service-host configs "${host}"
+	eventually "service is created anew" recreated services web-service services "${service}"
+	eventually "dial policy is created anew" recreated servicepolicies web-service-dial service-policies "${dial}"
+	host="$(mr_id confighostv1s web-service-host)"
+	service="$(mr_id services web-service)"
+	dial="$(mr_id servicepolicies web-service-dial)"
+	check_entity confighostv1s web-service-host configs \
+		'.data.address == "web-service.local" and .data.port == 8080 and .data.protocol == "tcp" and .data.listenOptions.precedence == "required"'
+	eventually "service refers to the new host config" entity_matches services "${service}" \
+		"(.configs | sort) == ([\"${host}\", \"$(mr_id configinterceptv1s web-service-intercept)\"] | sort)"
+	check_entity services web-service services \
+		'.encryptionRequired == true and .terminatorStrategy == "smartrouting" and (.roleAttributes | sort) == ["role:api", "role:web"]'
+	check_entity servicepolicies web-service-dial service-policies \
+		".type == \"Dial\" and .semantic == \"AnyOf\" and .serviceRoles == [\"@${service}\"] and .identityRoles == [\"#web-clients\"]"
+	wait_ready "${CORE_EXAMPLES[@]}"
+
+	step "An identity deleted in Ziti is created anew with a new enrollment token"
+	old="$(token_digest web-client-enrollment)" || fail "cannot read secret/web-client-enrollment"
+	ziti_delete identities "${client}" || fail "cannot delete the identity in Ziti"
+	expect_gone "identity is deleted in Ziti" identities web-client
+	eventually "identity is created anew" recreated identities web-client identities "${client}"
+	client="$(mr_id identities web-client)"
+	check_entity identities web-client identities '.roleAttributes == ["web-clients"] and .tags.team == "platform"'
+	expect_renewed identities web-client identities '.enrollment.ott.jwt' '.enrollment.ott.expiresAt' "${old}"
+
+	step "Lists that name an item twice settle"
+	# Ziti stores lists of strings as sets, without duplicates.
+	patch services web-service '{"roleAttributes": ["role:web", "role:api", "role:web"]}'
+	patch servicepolicies web-service-dial '{"identityRoles": ["#web-clients", "#web-clients"]}'
+	drift_stamps() {
+		stamps configs "$(mr_id confighostv1s web-service-host)"
+		stamps services "$(mr_id services web-service)"
+		stamps identities "$(mr_id identities web-client)"
+		stamps service-policies "$(mr_id servicepolicies web-service-dial)"
+	}
+	token="$(token_digest web-client-enrollment)" || fail "cannot read secret/web-client-enrollment"
+	expect_settled "entities with duplicates in their spec and entities created anew stay untouched" drift_stamps
+	old="${token}"
+	token="$(token_digest web-client-enrollment)" || fail "cannot read secret/web-client-enrollment"
+	expect "secret/web-client-enrollment: the token is not replaced again" "${token}" "${old}"
+
+	step "Deleting the managed resources deletes the entities created anew"
+	delete "${CORE_EXAMPLES[@]}"
+	expect_gone "service is gone" services web-service
+	expect_gone "host config is gone" configs web-service-host
+	expect_gone "client identity is gone" identities web-client
+	expect_gone "dial policy is gone" service-policies web-service-dial
 }
 
 test_extended() {
@@ -1201,6 +1302,7 @@ EOF
 run_tests() {
 	ziti_login
 	test_core
+	test_drift
 	if [ "${E2E_SKIP_EXTENDED:-false}" != "true" ]; then
 		test_extended
 		test_posture_checks
