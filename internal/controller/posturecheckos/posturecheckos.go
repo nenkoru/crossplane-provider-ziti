@@ -19,19 +19,22 @@ limitations under the License.
 package posturecheckos
 
 import (
+	"cmp"
 	"context"
 	"encoding/json"
+	"slices"
 
 	"github.com/crossplane/provider-ziti/apis/v1alpha1"
 	"github.com/crossplane/provider-ziti/internal/client"
 	"github.com/crossplane/provider-ziti/internal/controller/generic"
+	"github.com/crossplane/provider-ziti/internal/controller/posturecheck"
 )
 
 // Kind describes how a PostureCheckOS maps to the Ziti API.
 var Kind = generic.Kind[*v1alpha1.PostureCheckOS]{
 	GVK:        v1alpha1.PostureCheckOSGroupVersionKind,
 	List:       &v1alpha1.PostureCheckOSList{},
-	Collection: "posture-checks",
+	Collection: posturecheck.Collection,
 	Desired:    desired,
 	Observe: func(mg *v1alpha1.PostureCheckOS, entity json.RawMessage) error {
 		return generic.Unmarshal(entity, &mg.Status.AtProvider)
@@ -41,11 +44,17 @@ var Kind = generic.Kind[*v1alpha1.PostureCheckOS]{
 func desired(_ context.Context, _ *client.Client, mg *v1alpha1.PostureCheckOS) (map[string]any, error) {
 	p := mg.Spec.ForProvider
 
-	operatingSystems := make([]map[string]any, 0, len(p.OperatingSystems))
-	for _, os := range p.OperatingSystems {
+	// Ziti stores the operating systems under their type and returns them in
+	// its order, and their versions as a set, whatever order they were sent in.
+	sorted := slices.SortedFunc(slices.Values(p.OperatingSystems), func(a, b v1alpha1.OperatingSystem) int {
+		return cmp.Compare(a.Type, b.Type)
+	})
+
+	operatingSystems := make([]map[string]any, 0, len(sorted))
+	for _, os := range sorted {
 		operatingSystems = append(operatingSystems, map[string]any{
 			"type":     os.Type,
-			"versions": generic.Strings(os.Versions),
+			"versions": posturecheck.Set(os.Versions),
 		})
 	}
 

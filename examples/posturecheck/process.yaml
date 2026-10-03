@@ -1,0 +1,21 @@
+apiVersion: ziti.crossplane.io/v1alpha1
+kind: PostureCheckProcess
+metadata:
+  name: windows-agent
+spec:
+  providerConfigRef:
+    kind: ProviderConfig
+    name: default
+  forProvider:
+    name: windows-agent
+    process:
+      osType: Windows
+      path: 'C:\Program Files\Endpoint Agent\agent.exe'
+      # SHA-512 hashes of the executable. Ziti stores them in lower case.
+      hashes:
+        - "33679BEFB5996CABE53923EFC754E19FC0CAC7A63D0CEDDB14E7FF7E5F5EBA644FE833615D0580C2B8E68D481E1D547A34D422A9B8E93159B65E3295AEC92D3D"
+      # SHA-1 fingerprint of the signing certificate. Ziti stores it in lower
+      # case and without separators.
+      signerFingerprint: "6B:5A:DA:26:EE:CB:0E:04:30:9C:F0:42:5C:EB:07:44:F0:F4:54:B9"
+    roleAttributes:
+      - managed-devices

@@ -157,6 +157,34 @@ var (
 	AuthPolicyGroupVersionKind = SchemeGroupVersion.WithKind(AuthPolicyKind)
 )
 
+// PostureCheckDomain type metadata.
+var (
+	PostureCheckDomainKind             = reflect.TypeOf(PostureCheckDomain{}).Name()
+	PostureCheckDomainGroupKind        = schema.GroupKind{Group: Group, Kind: PostureCheckDomainKind}.String()
+	PostureCheckDomainGroupVersionKind = SchemeGroupVersion.WithKind(PostureCheckDomainKind)
+)
+
+// PostureCheckMac type metadata.
+var (
+	PostureCheckMacKind             = reflect.TypeOf(PostureCheckMac{}).Name()
+	PostureCheckMacGroupKind        = schema.GroupKind{Group: Group, Kind: PostureCheckMacKind}.String()
+	PostureCheckMacGroupVersionKind = SchemeGroupVersion.WithKind(PostureCheckMacKind)
+)
+
+// PostureCheckProcess type metadata.
+var (
+	PostureCheckProcessKind             = reflect.TypeOf(PostureCheckProcess{}).Name()
+	PostureCheckProcessGroupKind        = schema.GroupKind{Group: Group, Kind: PostureCheckProcessKind}.String()
+	PostureCheckProcessGroupVersionKind = SchemeGroupVersion.WithKind(PostureCheckProcessKind)
+)
+
+// PostureCheckMultiProcess type metadata.
+var (
+	PostureCheckMultiProcessKind             = reflect.TypeOf(PostureCheckMultiProcess{}).Name()
+	PostureCheckMultiProcessGroupKind        = schema.GroupKind{Group: Group, Kind: PostureCheckMultiProcessKind}.String()
+	PostureCheckMultiProcessGroupVersionKind = SchemeGroupVersion.WithKind(PostureCheckMultiProcessKind)
+)
+
 // CertificateAuthority type metadata.
 var (
 	CertificateAuthorityKind             = reflect.TypeOf(CertificateAuthority{}).Name()
@@ -191,6 +219,10 @@ func init() {
 	SchemeBuilder.Register(&PostureCheckOS{}, &PostureCheckOSList{})
 	SchemeBuilder.Register(&PostureCheckMFA{}, &PostureCheckMFAList{})
 	SchemeBuilder.Register(&AuthPolicy{}, &AuthPolicyList{})
+	SchemeBuilder.Register(&PostureCheckDomain{}, &PostureCheckDomainList{})
+	SchemeBuilder.Register(&PostureCheckMac{}, &PostureCheckMacList{})
+	SchemeBuilder.Register(&PostureCheckProcess{}, &PostureCheckProcessList{})
+	SchemeBuilder.Register(&PostureCheckMultiProcess{}, &PostureCheckMultiProcessList{})
 	SchemeBuilder.Register(&CertificateAuthority{}, &CertificateAuthorityList{})
 	SchemeBuilder.Register(&ExternalJWTSigner{}, &ExternalJWTSignerList{})
 }

@@ -1,0 +1,15 @@
+apiVersion: ziti.crossplane.io/v1alpha1
+kind: PostureCheckDomain
+metadata:
+  name: corporate-domain
+spec:
+  providerConfigRef:
+    kind: ProviderConfig
+    name: default
+  forProvider:
+    name: corporate-domain
+    domains:
+      - corp.example.com
+      - branch.example.com
+    roleAttributes:
+      - managed-devices

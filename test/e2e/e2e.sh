@@ -68,6 +68,15 @@ EXTENDED_EXAMPLES=(
 	examples/identity/none.yaml
 )
 
+# The posture checks that tell devices apart by their Windows domain, their
+# MAC addresses and the processes they run.
+POSTURE_CHECK_EXAMPLES=(
+	examples/posturecheck/domain.yaml
+	examples/posturecheck/mac.yaml
+	examples/posturecheck/process.yaml
+	examples/posturecheck/multiprocess.yaml
+)
+
 # The certificate authority, whose manifest gets a certificate that is made
 # for the test, see apply_ca.
 CA_EXAMPLE=examples/certificateauthority/certificateauthority.yaml
@@ -1008,11 +1017,151 @@ EOF
 	ziti_delete cas "${ca}" || fail "cannot delete the certificate authority"
 }
 
+test_posture_checks() {
+	# The examples give hashes and fingerprints in upper case and with
+	# separators, MAC addresses in two notations and lists out of order. Ziti
+	# stores hexadecimal values in lower case and without separators, and
+	# lists sorted. These are the values of the examples as Ziti stores them.
+	local agent_hash="33679befb5996cabe53923efc754e19fc0cac7a63d0ceddb14e7ff7e5f5eba644fe833615d0580c2b8e68d481e1d547a34d422a9b8e93159b65e3295aec92d3d"
+	local linux_hash_1="085b1d2647e1800b17809504600d01839f13fef57e647609b8c4a79b24c924b5281a01ae321606b1b820dc951a11470058b222400e5017e2144b5083d2617a97"
+	local linux_hash_2="a7fe5c886fad6bc932ada51ac4d35faa43a2f0a29bfd3122e1b28c1d4a1e4e5f33eb5f61b21ffe12994411445e855563266ff093d853279acc240ee426d60ab3"
+	local windows_signer="6b5ada26eecb0e04309cf0425ceb0744f0f454b9"
+	local macos_signer="f5b98b6fb446f07438f2fa72f55d60edd8b7e361"
+
+	step "Creating the posture checks"
+	apply "${POSTURE_CHECK_EXAMPLES[@]}"
+	# Ziti returns the operating systems of an OS check in the order of their
+	# type, and their versions sorted.
+	kubectl apply -f - <<EOF
+apiVersion: ${GROUP}/v1alpha1
+kind: PostureCheckOS
+metadata:
+  name: e2e-os-out-of-order
+  namespace: default
+spec:
+  providerConfigRef:
+    kind: ProviderConfig
+    name: default
+  forProvider:
+    name: e2e-os-out-of-order
+    operatingSystems:
+      - type: macOS
+        versions: [">=14.0.0", ">=13.0.0"]
+      - type: Windows
+        versions: [">=10.0.19045"]
+      - type: Linux
+        versions: [">=6.0.0", ">=5.10.0", ">=6.0.0"]
+EOF
+	wait_ready "${POSTURE_CHECK_EXAMPLES[@]}"
+	kubectl wait --for=condition=Ready --timeout="${TIMEOUT}s" "posturecheckoses.${GROUP}/e2e-os-out-of-order"
+
+	local domain mac process multi os
+	domain="$(mr_id posturecheckdomains corporate-domain)"
+	mac="$(mr_id posturecheckmacs registered-devices)"
+	process="$(mr_id posturecheckprocesses windows-agent)"
+	multi="$(mr_id posturecheckmultiprocesses endpoint-agents)"
+	os="$(mr_id posturecheckoses e2e-os-out-of-order)"
+
+	step "Checking the posture checks in Ziti"
+	check_entity posturecheckdomains corporate-domain posture-checks \
+		'.typeId == "DOMAIN" and .domains == ["branch.example.com", "corp.example.com"] and .roleAttributes == ["managed-devices"]'
+	check_entity posturecheckmacs registered-devices posture-checks \
+		'.typeId == "MAC" and .macAddresses == ["001a2b3c4d5e", "0a1b2c3d4e5f"] and .roleAttributes == ["registered-devices"]'
+	check_entity posturecheckprocesses windows-agent posture-checks \
+		".typeId == \"PROCESS\" and .process.osType == \"Windows\" and .process.path == \"C:\\\\Program Files\\\\Endpoint Agent\\\\agent.exe\" and .process.hashes == [\"${agent_hash}\"] and .process.signerFingerprint == \"${windows_signer}\" and .roleAttributes == [\"managed-devices\"]"
+	check_entity posturecheckmultiprocesses endpoint-agents posture-checks \
+		".typeId == \"PROCESS_MULTI\" and .semantic == \"AnyOf\" and (.processes | length) == 2 and .processes[0] == {osType: \"Linux\", path: \"/opt/endpoint-agent/bin/agent\", hashes: [\"${linux_hash_1}\", \"${linux_hash_2}\"], signerFingerprints: []} and .processes[1] == {osType: \"macOS\", path: \"/Library/Endpoint Agent/agent\", hashes: [], signerFingerprints: [\"${macos_signer}\"]}"
+	check_entity posturecheckoses e2e-os-out-of-order posture-checks \
+		'.typeId == "OS" and .operatingSystems == [{type: "Linux", versions: [">=5.10.0", ">=6.0.0"]}, {type: "Windows", versions: [">=10.0.19045"]}, {type: "macOS", versions: [">=13.0.0", ">=14.0.0"]}]'
+
+	step "Updating the posture checks updates Ziti"
+	# The new values are again not in the form Ziti stores them in, so that the
+	# check for updates without a reason below is run on such values. The
+	# process checks also lose a fingerprint and their hashes.
+	local domain_updated mac_updated process_updated multi_updated
+	domain_updated='.domains == ["corp.example.com", "emea.example.com"] and (.roleAttributes | sort) == ["e2e", "managed-devices"]'
+	mac_updated='.macAddresses == ["001a2b3c4d5e", "0a1b2c3d4e60"] and .tags == {"env": "e2e"}'
+	process_updated=".process.osType == \"Windows\" and .process.path == \"C:\\\\Program Files\\\\Endpoint Agent\\\\agent64.exe\" and .process.hashes == [\"${agent_hash}\"] and (.process.signerFingerprint // \"\") == \"\" and (.roleAttributes | sort) == [\"e2e\", \"managed-devices\"]"
+	multi_updated=".semantic == \"AllOf\" and (.processes | length) == 2 and .processes[0] == {osType: \"Linux\", path: \"/opt/endpoint-agent/bin/agent\", hashes: [], signerFingerprints: []} and .processes[1] == {osType: \"Windows\", path: \"C:\\\\Program Files\\\\Endpoint Agent\\\\agent.exe\", hashes: [], signerFingerprints: [\"${windows_signer}\"]}"
+	patch posturecheckdomains corporate-domain '{"domains": ["emea.example.com", "corp.example.com"], "roleAttributes": ["managed-devices", "e2e"]}'
+	eventually "domain posture check is updated in Ziti" entity_matches posture-checks "${domain}" "${domain_updated}"
+	patch posturecheckmacs registered-devices '{"macAddresses": ["0A1B.2C3D.4E60", "00:1A:2B:3C:4D:5E"], "tags": {"env": "e2e"}}'
+	eventually "MAC address posture check is updated in Ziti" entity_matches posture-checks "${mac}" "${mac_updated}"
+	patch posturecheckprocesses windows-agent \
+		'{"process": {"path": "C:\\Program Files\\Endpoint Agent\\agent64.exe", "signerFingerprint": null}, "roleAttributes": ["managed-devices", "e2e"]}'
+	eventually "process posture check is updated in Ziti" entity_matches posture-checks "${process}" "${process_updated}"
+	patch posturecheckmultiprocesses endpoint-agents \
+		'{"semantic": "AllOf", "processes": [{"osType": "Windows", "path": "C:\\Program Files\\Endpoint Agent\\agent.exe", "signerFingerprints": ["6B:5A:DA:26:EE:CB:0E:04:30:9C:F0:42:5C:EB:07:44:F0:F4:54:B9"]}, {"osType": "Linux", "path": "/opt/endpoint-agent/bin/agent"}]}'
+	eventually "multi process posture check is updated in Ziti" entity_matches posture-checks "${multi}" "${multi_updated}"
+
+	step "Changes made to the posture checks in Ziti behind the provider's back are reverted"
+	ziti_patch posture-checks "${domain}" '{"typeId": "DOMAIN", "domains": ["tampered.example.com"]}'
+	entity_matches posture-checks "${domain}" '.domains == ["tampered.example.com"]' >/dev/null || fail "could not tamper with the domain posture check"
+	ziti_patch posture-checks "${mac}" '{"typeId": "MAC", "macAddresses": ["ff:ff:ff:ff:ff:ff"]}'
+	entity_matches posture-checks "${mac}" '.macAddresses == ["ffffffffffff"]' >/dev/null || fail "could not tamper with the MAC address posture check"
+	ziti_patch posture-checks "${process}" '{"typeId": "PROCESS", "process": {"osType": "Linux", "path": "/tampered", "hashes": ["ff"], "signerFingerprint": "ff"}}'
+	entity_matches posture-checks "${process}" '.process.path == "/tampered"' >/dev/null || fail "could not tamper with the process posture check"
+	ziti_patch posture-checks "${multi}" '{"typeId": "PROCESS_MULTI", "semantic": "AnyOf", "processes": [{"osType": "Linux", "path": "/tampered", "hashes": ["ff"], "signerFingerprints": ["ff"]}]}'
+	entity_matches posture-checks "${multi}" '.semantic == "AnyOf" and .processes[0].path == "/tampered"' >/dev/null || fail "could not tamper with the multi process posture check"
+	eventually "domain posture check is restored" entity_matches posture-checks "${domain}" "${domain_updated}"
+	eventually "MAC address posture check is restored" entity_matches posture-checks "${mac}" "${mac_updated}"
+	eventually "process posture check is restored" entity_matches posture-checks "${process}" "${process_updated}"
+	eventually "multi process posture check is restored" entity_matches posture-checks "${multi}" "${multi_updated}"
+
+	step "A service policy refers to a posture check by name"
+	local policy
+	kubectl apply -f - <<EOF
+apiVersion: ${GROUP}/v1alpha1
+kind: ServicePolicy
+metadata:
+  name: e2e-posture-dial
+  namespace: default
+spec:
+  providerConfigRef:
+    kind: ProviderConfig
+    name: default
+  forProvider:
+    name: e2e-posture-dial
+    type: Dial
+    semantic: AnyOf
+    serviceRoles:
+      - "#role:web"
+    identityRoles:
+      - "#web-clients"
+    postureCheckRoles:
+      - "@corporate-domain"
+      - "#managed-devices"
+EOF
+	kubectl wait --for=condition=Ready --timeout="${TIMEOUT}s" "servicepolicies.${GROUP}/e2e-posture-dial"
+	policy="$(mr_id servicepolicies e2e-posture-dial)"
+	check_entity servicepolicies e2e-posture-dial service-policies \
+		"(.postureCheckRoles | sort) == ([\"@${domain}\", \"#managed-devices\"] | sort)"
+
+	step "No posture check is updated without a spec change"
+	posture_check_stamps() {
+		stamps posture-checks "${domain}" "${mac}" "${process}" "${multi}" "${os}"
+		stamps service-policies "${policy}"
+	}
+	expect_settled "posture checks stay untouched" posture_check_stamps
+
+	step "Deleting the posture checks"
+	kubectl delete --wait --timeout="${TIMEOUT}s" "servicepolicies.${GROUP}/e2e-posture-dial"
+	expect_gone "service policy with posture checks is gone" service-policies e2e-posture-dial
+	delete "${POSTURE_CHECK_EXAMPLES[@]}"
+	kubectl delete --wait --timeout="${TIMEOUT}s" "posturecheckoses.${GROUP}/e2e-os-out-of-order"
+	expect_gone "domain posture check is gone" posture-checks corporate-domain
+	expect_gone "MAC address posture check is gone" posture-checks registered-devices
+	expect_gone "process posture check is gone" posture-checks windows-agent
+	expect_gone "multi process posture check is gone" posture-checks endpoint-agents
+	expect_gone "OS posture check listed out of order is gone" posture-checks e2e-os-out-of-order
+}
+
 run_tests() {
 	ziti_login
 	test_core
 	if [ "${E2E_SKIP_EXTENDED:-false}" != "true" ]; then
 		test_extended
+		test_posture_checks
 		test_authentication
 		test_renewal
 	fi

@@ -4,7 +4,7 @@ kind: CustomResourceDefinition
 metadata:
   annotations:
     controller-gen.kubebuilder.io/version: v0.20.0
-  name: posturecheckoses.ziti.crossplane.io
+  name: posturecheckmacs.ziti.crossplane.io
 spec:
   group: ziti.crossplane.io
   names:
@@ -12,10 +12,10 @@ spec:
     - crossplane
     - managed
     - ziti
-    kind: PostureCheckOS
-    listKind: PostureCheckOSList
-    plural: posturecheckoses
-    singular: posturecheckos
+    kind: PostureCheckMac
+    listKind: PostureCheckMacList
+    plural: posturecheckmacs
+    singular: posturecheckmac
   scope: Namespaced
   versions:
   - additionalPrinterColumns:
@@ -34,7 +34,8 @@ spec:
     name: v1alpha1
     schema:
       openAPIV3Schema:
-        description: PostureCheckOS is the top level Ziti OS Posture Check resource.
+        description: PostureCheckMac is the top level Ziti MAC Address Posture Check
+          resource.
         properties:
           apiVersion:
             description: |-
@@ -54,47 +55,31 @@ spec:
           metadata:
             type: object
           spec:
-            description: PostureCheckOSSpec defines the desired state of a PostureCheckOS.
+            description: PostureCheckMacSpec defines the desired state of a PostureCheckMac.
             properties:
               forProvider:
-                description: PostureCheckOSParameters define the desired state of
-                  an OS Posture Check.
+                description: |-
+                  PostureCheckMacParameters define the desired state of a MAC Address Posture
+                  Check.
                 properties:
+                  macAddresses:
+                    description: |-
+                      MacAddresses that pass the check: a device must have one of them. Ziti
+                      keeps them as a set, so their order and duplicates do not matter.
+                    items:
+                      description: |-
+                        HexString is a hexadecimal value of a posture check: a MAC address, the
+                        hash of a file or the fingerprint of a certificate. Its digits may be in
+                        either case and separated by colons, dashes, dots or spaces. Ziti stores
+                        the value in lower case and without separators, so "00:1A:2B:3C:4D:5E" and
+                        "001a2b3c4d5e" are the same value.
+                      pattern: ^[0-9A-Fa-f]+([ :.-][0-9A-Fa-f]+)*$
+                      type: string
+                    minItems: 1
+                    type: array
                   name:
                     description: Name of the posture check.
                     type: string
-                  operatingSystems:
-                    description: |-
-                      OperatingSystems that pass the check. Ziti keeps one entry per type, so
-                      each type may be listed once, and their order does not matter.
-                    items:
-                      description: OperatingSystem defines an OS posture check constraint.
-                      properties:
-                        type:
-                          description: Type of operating system.
-                          enum:
-                          - Windows
-                          - WindowsServer
-                          - Android
-                          - iOS
-                          - Linux
-                          - macOS
-                          type: string
-                        versions:
-                          description: |-
-                            Versions constraint (e.g., [">=10.0.0"]). Ziti keeps them as a set, so
-                            their order and duplicates do not matter.
-                          items:
-                            type: string
-                          type: array
-                      required:
-                      - type
-                      type: object
-                    minItems: 1
-                    type: array
-                    x-kubernetes-list-map-keys:
-                    - type
-                    x-kubernetes-list-type: map
                   roleAttributes:
                     description: RoleAttributes for the posture check.
                     items:
@@ -106,8 +91,8 @@ spec:
                     description: Tags is a map of tags.
                     type: object
                 required:
+                - macAddresses
                 - name
-                - operatingSystems
                 type: object
               managementPolicies:
                 default:
@@ -168,42 +153,23 @@ spec:
             - forProvider
             type: object
           status:
-            description: PostureCheckOSStatus defines the observed state of a PostureCheckOS.
+            description: PostureCheckMacStatus defines the observed state of a PostureCheckMac.
             properties:
               atProvider:
-                description: PostureCheckOSObservation keeps the observed state.
+                description: PostureCheckMacObservation keeps the observed state.
                 properties:
                   createdAt:
                     type: string
                   id:
                     type: string
+                  macAddresses:
+                    description: 'MacAddresses as Ziti stores them: in lower case
+                      and without separators.'
+                    items:
+                      type: string
+                    type: array
                   name:
                     type: string
-                  operatingSystems:
-                    items:
-                      description: OperatingSystem defines an OS posture check constraint.
-                      properties:
-                        type:
-                          description: Type of operating system.
-                          enum:
-                          - Windows
-                          - WindowsServer
-                          - Android
-                          - iOS
-                          - Linux
-                          - macOS
-                          type: string
-                        versions:
-                          description: |-
-                            Versions constraint (e.g., [">=10.0.0"]). Ziti keeps them as a set, so
-                            their order and duplicates do not matter.
-                          items:
-                            type: string
-                          type: array
-                      required:
-                      - type
-                      type: object
-                    type: array
                   roleAttributes:
                     items:
                       type: string

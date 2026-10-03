@@ -32,10 +32,10 @@ namespaced, and a cluster-scoped `ClusterProviderConfig` is available.
 | `IdentityCA` | identity, enrollment with a certificate of a third-party CA | yes | yes | yes | yes | extended |
 | `IdentityUPDB` | identity, password enrollment | yes | yes | yes | yes | extended |
 | `IdentityNone` | identity without enrollment | yes | yes | yes | yes | extended |
-| `PostureCheckDomain` | posture check of type DOMAIN | no | no | no | no | no |
-| `PostureCheckMac` | posture check of type MAC | no | no | no | no | no |
-| `PostureCheckProcess` | posture check of type PROCESS | no | no | no | no | no |
-| `PostureCheckMultiProcess` | posture check of type PROCESS_MULTI | no | no | no | no | no |
+| `PostureCheckDomain` | posture check of type DOMAIN | yes | yes | yes | yes | posture checks |
+| `PostureCheckMac` | posture check of type MAC | yes | yes | yes | yes | posture checks |
+| `PostureCheckProcess` | posture check of type PROCESS | yes | yes | yes | yes | posture checks |
+| `PostureCheckMultiProcess` | posture check of type PROCESS_MULTI | yes | yes | yes | yes | posture checks |
 | `CertificateAuthority` | third-party certificate authority | yes | yes | yes | yes | authentication |
 | `ExternalJWTSigner` | external JWT signer | yes | yes | yes | yes | authentication |
 
@@ -49,7 +49,7 @@ How to read the table:
   covers the kind against a real OpenZiti controller: the entity is created
   as declared, follows a spec change, is not touched without one, and is
   deleted with its managed resource. CI runs it on every pull request
-  against OpenZiti 2.0.6, and all fifteen kinds that have a controller pass.
+  against OpenZiti 2.0.6, and all twenty-one kinds pass.
 
 ## How it behaves
 
@@ -101,6 +101,16 @@ How to read the table:
   in how the identity enrolls: `Identity` with a one-time token, `IdentityCA`
   with a one-time token and a certificate of a third-party CA,
   `IdentityUPDB` by choosing a password, `IdentityNone` not at all.
+- **Posture checks.** Ziti does not store the values of a posture check as
+  they are sent: domains, MAC addresses, hashes, fingerprints and the
+  versions of an operating system are kept as sets, and MAC addresses,
+  hashes and fingerprints in lower case without separators. The spec may
+  give them in any order, in either case and with `:`, `-`, `.` or spaces
+  between the digits; the provider sends and compares them in the form Ziti
+  stores, which is also what `status.atProvider` shows. Ziti keeps one
+  entry per operating system type of a `PostureCheckOS` and per operating
+  system and path of a `PostureCheckMultiProcess`, in their order, so the
+  API server rejects an entry that is listed twice.
 - **Enrollment tokens.** `Identity`, `IdentityCA`, `IdentityUPDB` and
   `EdgeRouter` write their enrollment JWT to the Secret named in
   `spec.writeConnectionSecretToRef`, under the key `enrollmentToken`, and
@@ -320,9 +330,7 @@ entities.
 
 1. Give the end-to-end suite its own CI job; the `unit-tests` job runs it for
    now.
-2. Add the missing kinds: the remaining posture checks,
-   `CertificateAuthority` and `ExternalJWTSigner`.
-3. Package and install the provider through Crossplane in the end-to-end test,
+2. Package and install the provider through Crossplane in the end-to-end test,
    then publish a first release.
 
 ## License

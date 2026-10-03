@@ -4,7 +4,7 @@ kind: CustomResourceDefinition
 metadata:
   annotations:
     controller-gen.kubebuilder.io/version: v0.20.0
-  name: posturecheckoses.ziti.crossplane.io
+  name: posturecheckmultiprocesses.ziti.crossplane.io
 spec:
   group: ziti.crossplane.io
   names:
@@ -12,10 +12,10 @@ spec:
     - crossplane
     - managed
     - ziti
-    kind: PostureCheckOS
-    listKind: PostureCheckOSList
-    plural: posturecheckoses
-    singular: posturecheckos
+    kind: PostureCheckMultiProcess
+    listKind: PostureCheckMultiProcessList
+    plural: posturecheckmultiprocesses
+    singular: posturecheckmultiprocess
   scope: Namespaced
   versions:
   - additionalPrinterColumns:
@@ -34,7 +34,8 @@ spec:
     name: v1alpha1
     schema:
       openAPIV3Schema:
-        description: PostureCheckOS is the top level Ziti OS Posture Check resource.
+        description: PostureCheckMultiProcess is the top level Ziti Multi Process
+          Posture Check resource.
         properties:
           apiVersion:
             description: |-
@@ -54,24 +55,45 @@ spec:
           metadata:
             type: object
           spec:
-            description: PostureCheckOSSpec defines the desired state of a PostureCheckOS.
+            description: |-
+              PostureCheckMultiProcessSpec defines the desired state of a
+              PostureCheckMultiProcess.
             properties:
               forProvider:
-                description: PostureCheckOSParameters define the desired state of
-                  an OS Posture Check.
+                description: |-
+                  PostureCheckMultiProcessParameters define the desired state of a Multi
+                  Process Posture Check.
                 properties:
                   name:
                     description: Name of the posture check.
                     type: string
-                  operatingSystems:
+                  processes:
                     description: |-
-                      OperatingSystems that pass the check. Ziti keeps one entry per type, so
-                      each type may be listed once, and their order does not matter.
+                      Processes to look for. Ziti identifies a process by its operating
+                      system and path, so each pair may be listed once, and their order does
+                      not matter.
                     items:
-                      description: OperatingSystem defines an OS posture check constraint.
+                      description: MultiProcess defines one of the processes of a
+                        multi process posture check.
                       properties:
-                        type:
-                          description: Type of operating system.
+                        hashes:
+                          description: |-
+                            Hashes are the SHA-512 hashes the executable may have. Any executable
+                            passes if there are none. Ziti keeps them as a set, so their order and
+                            duplicates do not matter.
+                          items:
+                            description: |-
+                              HexString is a hexadecimal value of a posture check: a MAC address, the
+                              hash of a file or the fingerprint of a certificate. Its digits may be in
+                              either case and separated by colons, dashes, dots or spaces. Ziti stores
+                              the value in lower case and without separators, so "00:1A:2B:3C:4D:5E" and
+                              "001a2b3c4d5e" are the same value.
+                            pattern: ^[0-9A-Fa-f]+([ :.-][0-9A-Fa-f]+)*$
+                            type: string
+                          type: array
+                        osType:
+                          description: OsType is the operating system the process
+                            runs on.
                           enum:
                           - Windows
                           - WindowsServer
@@ -80,26 +102,48 @@ spec:
                           - Linux
                           - macOS
                           type: string
-                        versions:
+                        path:
+                          description: Path of the executable.
+                          type: string
+                        signerFingerprints:
                           description: |-
-                            Versions constraint (e.g., [">=10.0.0"]). Ziti keeps them as a set, so
-                            their order and duplicates do not matter.
+                            SignerFingerprints are the SHA-1 fingerprints of the certificates the
+                            executable may be signed with. Any signer passes if there are none.
+                            Ziti keeps them as a set, so their order and duplicates do not matter.
                           items:
+                            description: |-
+                              HexString is a hexadecimal value of a posture check: a MAC address, the
+                              hash of a file or the fingerprint of a certificate. Its digits may be in
+                              either case and separated by colons, dashes, dots or spaces. Ziti stores
+                              the value in lower case and without separators, so "00:1A:2B:3C:4D:5E" and
+                              "001a2b3c4d5e" are the same value.
+                            pattern: ^[0-9A-Fa-f]+([ :.-][0-9A-Fa-f]+)*$
                             type: string
                           type: array
                       required:
-                      - type
+                      - osType
+                      - path
                       type: object
                     minItems: 1
                     type: array
                     x-kubernetes-list-map-keys:
-                    - type
+                    - osType
+                    - path
                     x-kubernetes-list-type: map
                   roleAttributes:
                     description: RoleAttributes for the posture check.
                     items:
                       type: string
                     type: array
+                  semantic:
+                    default: AllOf
+                    description: |-
+                      Semantic says whether all of the processes must be running (AllOf) or
+                      any one of them (AnyOf).
+                    enum:
+                    - AllOf
+                    - AnyOf
+                    type: string
                   tags:
                     additionalProperties:
                       type: string
@@ -107,7 +151,7 @@ spec:
                     type: object
                 required:
                 - name
-                - operatingSystems
+                - processes
                 type: object
               managementPolicies:
                 default:
@@ -168,10 +212,13 @@ spec:
             - forProvider
             type: object
           status:
-            description: PostureCheckOSStatus defines the observed state of a PostureCheckOS.
+            description: |-
+              PostureCheckMultiProcessStatus defines the observed state of a
+              PostureCheckMultiProcess.
             properties:
               atProvider:
-                description: PostureCheckOSObservation keeps the observed state.
+                description: PostureCheckMultiProcessObservation keeps the observed
+                  state.
                 properties:
                   createdAt:
                     type: string
@@ -179,35 +226,32 @@ spec:
                     type: string
                   name:
                     type: string
-                  operatingSystems:
+                  processes:
                     items:
-                      description: OperatingSystem defines an OS posture check constraint.
+                      description: |-
+                        MultiProcessObservation is a process as Ziti reports it, with its hashes
+                        and fingerprints in lower case and without separators.
                       properties:
-                        type:
-                          description: Type of operating system.
-                          enum:
-                          - Windows
-                          - WindowsServer
-                          - Android
-                          - iOS
-                          - Linux
-                          - macOS
-                          type: string
-                        versions:
-                          description: |-
-                            Versions constraint (e.g., [">=10.0.0"]). Ziti keeps them as a set, so
-                            their order and duplicates do not matter.
+                        hashes:
                           items:
                             type: string
                           type: array
-                      required:
-                      - type
+                        osType:
+                          type: string
+                        path:
+                          type: string
+                        signerFingerprints:
+                          items:
+                            type: string
+                          type: array
                       type: object
                     type: array
                   roleAttributes:
                     items:
                       type: string
                     type: array
+                  semantic:
+                    type: string
                   tags:
                     additionalProperties:
                       type: string
