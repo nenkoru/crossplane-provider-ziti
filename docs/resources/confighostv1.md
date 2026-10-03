@@ -92,7 +92,7 @@ More manifests of the kind: [`examples/scenarios/configs.yaml`](../../examples/s
 | `allowedProtocols` | list of strings |  | `data.allowedProtocols` | AllowedProtocols are the protocols forwardProtocol may connect with: tcp, udp. |
 | `allowedSourceAddresses` | list of strings |  | `data.allowedSourceAddresses` | AllowedSourceAddresses are the addresses the hosting tunneler may connect from when the intercept config of the service sets sourceIp. |
 | `forwardAddress` | boolean |  | `data.forwardAddress` | ForwardAddress connects to the address the client asked for, if allowedAddresses has it. |
-| `forwardAddressTranslations` | list of objects |  | `data.forwardAddressTranslations` | ForwardAddressTranslations move the address the client asked for into another range before the hosting tunneler connects. They apply when forwardAddress is true. |
+| `forwardAddressTranslations` | list of objects |  | `data.forwardAddressTranslations` | ForwardAddressTranslations move the address the client asked for into another range before the hosting tunneler connects. They apply when forwardAddress is true. Rule of an item: from and to must be IP addresses of the same family. Rule of an item: prefixLength must be at most 32 for IPv4. |
 | `forwardAddressTranslations[].from` | string, required |  | `data.forwardAddressTranslations[].from` | From is the first address of the range clients ask for, as a single IPv4 or IPv6 address without a prefix length, such as 10.0.0.0. Ziti refuses CIDR notation here: prefixLength gives the size of the range. |
 | `forwardAddressTranslations[].prefixLength` | integer, required |  | `data.forwardAddressTranslations[].prefixLength` | PrefixLength is the length of the prefix of from that is replaced by the prefix of to: the bits after it are kept. At most 32 for IPv4 and 128 for IPv6. From 0 to 128. |
 | `forwardAddressTranslations[].to` | string, required |  | `data.forwardAddressTranslations[].to` | To is the first address of the range the hosting tunneler connects to instead, as a single address of the same family as from, such as 192.168.0.0. |
@@ -206,6 +206,6 @@ in [Concepts](../concepts.md).
 ## When something goes wrong
 
 - Ziti answers `400` and names a property of the data: the value does not fit the schema of `host.v1`. The usual causes are a fixed `address` together with `forwardAddress`, a forwarded value without its `allowed...` list, and a health check action without `duration`.
-- The API server rejects the manifest: `port` is outside 1 to 65535, or `protocol`, `listenOptions.precedence` or a check `trigger` is not one of the listed values.
+- The API server rejects the manifest: `port` is outside 1 to 65535, or `protocol`, `listenOptions.precedence` or a check `trigger` is not one of the listed values; or an entry of `forwardAddressTranslations` mixes IPv4 with IPv6, has something other than a single IP address in `from` or `to`, or has a `prefixLength` above 32 for IPv4.
 
 Create, update, drift, deletion in Ziti and deletion of the resource are covered by the end-to-end test, see [Testing](../testing.md).

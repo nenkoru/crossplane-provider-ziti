@@ -57,7 +57,7 @@ More manifests of the kind: [`examples/service/hostv2.yaml`](../../examples/serv
 | `terminators[].allowedProtocols` | list of strings |  | `data.terminators[].allowedProtocols` | AllowedProtocols are the protocols forwardProtocol may connect with: tcp, udp. |
 | `terminators[].allowedSourceAddresses` | list of strings |  | `data.terminators[].allowedSourceAddresses` | AllowedSourceAddresses are the addresses the hosting tunneler may connect from when the intercept config of the service sets sourceIp. |
 | `terminators[].forwardAddress` | boolean |  | `data.terminators[].forwardAddress` | ForwardAddress connects to the address the client asked for, if allowedAddresses has it. |
-| `terminators[].forwardAddressTranslations` | list of objects |  | `data.terminators[].forwardAddressTranslations` | ForwardAddressTranslations move the address the client asked for into another range before the hosting tunneler connects. They apply when forwardAddress is true. |
+| `terminators[].forwardAddressTranslations` | list of objects |  | `data.terminators[].forwardAddressTranslations` | ForwardAddressTranslations move the address the client asked for into another range before the hosting tunneler connects. They apply when forwardAddress is true. Rule of an item: from and to must be IP addresses of the same family. Rule of an item: prefixLength must be at most 32 for IPv4. |
 | `terminators[].forwardAddressTranslations[].from` | string, required |  | `data.terminators[].forwardAddressTranslations[].from` | From is the first address of the range clients ask for, as a single IPv4 or IPv6 address without a prefix length, such as 10.0.0.0. Ziti refuses CIDR notation here: prefixLength gives the size of the range. |
 | `terminators[].forwardAddressTranslations[].prefixLength` | integer, required |  | `data.terminators[].forwardAddressTranslations[].prefixLength` | PrefixLength is the length of the prefix of from that is replaced by the prefix of to: the bits after it are kept. At most 32 for IPv4 and 128 for IPv6. From 0 to 128. |
 | `terminators[].forwardAddressTranslations[].to` | string, required |  | `data.terminators[].forwardAddressTranslations[].to` | To is the first address of the range the hosting tunneler connects to instead, as a single address of the same family as from, such as 192.168.0.0. |
@@ -171,6 +171,6 @@ in [Concepts](../concepts.md).
 ## When something goes wrong
 
 - Ziti answers `400` and names `terminators`: one of them does not fit the schema, with the same causes as for [`ConfigHostV1`](confighostv1.md).
-- The API server rejects the manifest: `terminators` is empty.
+- The API server rejects the manifest: `terminators` is empty, or an entry of `forwardAddressTranslations` mixes IPv4 with IPv6, has something other than a single IP address in `from` or `to`, or has a `prefixLength` above 32 for IPv4.
 
 Create, update, drift, deletion in Ziti and deletion of the resource are covered by the end-to-end test, see [Testing](../testing.md).
