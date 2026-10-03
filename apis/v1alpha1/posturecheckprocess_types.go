@@ -26,7 +26,7 @@ type Process struct {
 	// SignerFingerprint is the SHA-1 fingerprint of the certificate the
 	// executable must be signed with.
 	// +optional
-	SignerFingerprint HexString `json:"signerFingerprint,omitempty"`
+	SignerFingerprint OptionalHexString `json:"signerFingerprint,omitempty"`
 }
 
 // PostureCheckProcessParameters define the desired state of a Process Posture

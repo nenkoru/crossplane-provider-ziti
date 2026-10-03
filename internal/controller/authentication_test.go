@@ -19,6 +19,7 @@ package controller_test
 import (
 	"context"
 	"os"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -450,6 +451,30 @@ func TestAuthenticationSchemas(t *testing.T) {
 	} {
 		if err := k.Create(ctx, signer); !kerrors.IsInvalid(err) {
 			t.Errorf("creating the signer %s: want it to be rejected as invalid, got %v", name, err)
+		}
+	}
+
+	// Ziti takes the scheme of a JWKS endpoint in any case and wants a host.
+	endpoints := []struct {
+		url   string
+		valid bool
+	}{
+		{url: "HTTPS://sso.example.com/jwks", valid: true},
+		{url: "Http://sso.example.com:8080/jwks?a=b", valid: true},
+		{url: "https://sso.example.com", valid: true},
+		{url: "https://[2001:db8::1]:8443/jwks", valid: true},
+		{url: "https://reader@sso.example.com/jwks", valid: true},
+		{url: "http:///jwks"},
+		{url: "https://:8443/jwks"},
+		{url: "https://client@/jwks"},
+		{url: "https:/sso.example.com/jwks"},
+		{url: "https://sso.example.com:https/jwks"},
+		{url: "ftp://sso.example.com/jwks"},
+	}
+	for i, tc := range endpoints {
+		err := k.Create(ctx, newSigner("endpoint-"+strconv.Itoa(i), ptr.To(tc.url), nil))
+		if (err == nil) != tc.valid || (err != nil && !kerrors.IsInvalid(err)) {
+			t.Errorf("creating a signer with the JWKS endpoint %q: want valid %t, got %v", tc.url, tc.valid, err)
 		}
 	}
 }

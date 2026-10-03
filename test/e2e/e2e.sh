@@ -861,18 +861,21 @@ EOF
 	declare_resource Identity e2e-expired 'enrollmentDuration: 10m'
 	declare_resource Identity e2e-deleted
 	declare_resource Identity e2e-enrolled
+	declare_resource Identity e2e-external 'externalId: e2e-external@example.org'
+	declare_resource Identity e2e-by-id
 	declare_resource IdentityCA e2e-deleted-ca 'ottca: e2e-renewal-ca'
 	declare_resource IdentityUPDB e2e-deleted-updb 'updbUsername: e2e-deleted-updb'
 	declare_resource EdgeRouter e2e-deleted-router
 	declare_resource EdgeRouter e2e-enrolled-router
 	local resources=(
 		"identities.${GROUP}/e2e-expired" "identities.${GROUP}/e2e-deleted" "identities.${GROUP}/e2e-enrolled"
+		"identities.${GROUP}/e2e-external" "identities.${GROUP}/e2e-by-id"
 		"identitycas.${GROUP}/e2e-deleted-ca" "identityupdbs.${GROUP}/e2e-deleted-updb"
 		"edgerouters.${GROUP}/e2e-deleted-router" "edgerouters.${GROUP}/e2e-enrolled-router"
 	)
 	kubectl wait --for=condition=Ready --timeout="${TIMEOUT}s" "${resources[@]}"
 
-	local expired deleted with_ca with_password router enrolled enrolled_router
+	local expired deleted with_ca with_password router enrolled enrolled_router external by_id
 	expired="$(mr_id identities e2e-expired)"
 	deleted="$(mr_id identities e2e-deleted)"
 	with_ca="$(mr_id identitycas e2e-deleted-ca)"
@@ -880,6 +883,8 @@ EOF
 	router="$(mr_id edgerouters e2e-deleted-router)"
 	enrolled="$(mr_id identities e2e-enrolled)"
 	enrolled_router="$(mr_id edgerouters e2e-enrolled-router)"
+	external="$(mr_id identities e2e-external)"
+	by_id="$(mr_id identities e2e-by-id)"
 	check_token e2e-expired-enrollment identities "${expired}" '.enrollment.ott.jwt'
 	check_token e2e-deleted-enrollment identities "${deleted}" '.enrollment.ott.jwt'
 	check_token e2e-deleted-ca-enrollment identities "${with_ca}" '.enrollment.ottca.jwt'
@@ -887,6 +892,8 @@ EOF
 	check_token e2e-deleted-router-enrollment edge-routers "${router}" '.enrollmentJwt'
 	check_token e2e-enrolled-enrollment identities "${enrolled}" '.enrollment.ott.jwt'
 	check_token e2e-enrolled-router-enrollment edge-routers "${enrolled_router}" '.enrollmentJwt'
+	check_token e2e-external-enrollment identities "${external}" '.enrollment.ott.jwt'
+	check_token e2e-by-id-enrollment identities "${by_id}" '.enrollment.ott.jwt'
 	eventually "edgerouters/e2e-deleted-router: status says when the token expires" \
 		expiry_is_current edgerouters e2e-deleted-router edge-routers '.enrollmentExpiresAt'
 
@@ -1006,10 +1013,43 @@ EOF
 		expect "${resource}: is in sync" "$(kubectl get "${resource}" -o jsonpath='{.status.conditions[?(@.type=="Synced")].status}')" "True"
 	done
 
+	step "An identity that can sign in without an authenticator gets no enrollment"
+	# Ziti reports no authenticator for an identity that signs in with an
+	# external JWT, or with a certificate of a certificate authority that
+	# carries its external ID. One with an external ID can do so, and so can
+	# every identity whose auth policy allows a signer that looks identities
+	# up by their ID, which the default policy does for every signer.
+	entity_matches auth-policies default '.primary.extJwt.allowed == true and (.primary.extJwt.allowedSigners | length) == 0' >/dev/null ||
+		fail "the default auth policy does not allow every external JWT signer"
+	openssl req -x509 -newkey rsa:2048 -nodes -days 1 -subj '/CN=provider-ziti e2e renewal signer' \
+		-keyout "${WORK}/renewal-signer.key" -out "${WORK}/renewal-signer.crt" 2>/dev/null || fail "cannot create a signer certificate"
+	local signer id
+	signer="$(ziti_post external-jwt-signers "$(jq -n --rawfile pem "${WORK}/renewal-signer.crt" \
+		'{name: "e2e-renewal-by-id", issuer: "https://e2e-renewal.example.org", audience: "ziti", certPem: $pem, enabled: true, useExternalId: false}')")" ||
+		fail "cannot create an external JWT signer in Ziti"
+	for id in "${external}" "${by_id}"; do
+		enrollment="$(ziti_get identities "${id}" | jq -er '.enrollment.ott.id')" || fail "identity ${id} has no enrollment"
+		ziti_delete enrollments "${enrollment}" || fail "cannot delete the enrollment of identity ${id} in Ziti"
+	done
+	# The provider polls several times meanwhile.
+	sleep "${SETTLE}"
+	entity_matches identities "${external}" '.externalId == "e2e-external@example.org" and ([.enrollment[]?] | length) == 0' >/dev/null ||
+		fail "identities/e2e-external got an enrollment although it can sign in with its external ID"
+	ok "identities/e2e-external: gets no enrollment, it can sign in with its external ID"
+	entity_matches identities "${by_id}" '([.enrollment[]?] | length) == 0' >/dev/null ||
+		fail "identities/e2e-by-id got an enrollment although it can sign in with a JWT that names its ID"
+	ok "identities/e2e-by-id: gets no enrollment while a signer looks identities up by their ID"
+	ziti_delete external-jwt-signers "${signer}" || fail "cannot delete the external JWT signer"
+	eventually "identities/e2e-by-id: has an enrollment again once no signer looks it up by its ID" \
+		entity_matches identities "${by_id}" '.enrollment.ott.id != null'
+	entity_matches identities "${external}" '([.enrollment[]?] | length) == 0' >/dev/null ||
+		fail "identities/e2e-external got an enrollment although it can sign in with its external ID"
+	ok "identities/e2e-external: still has no enrollment"
+
 	step "Deleting the identities and edge routers"
 	kubectl delete --wait --timeout="${TIMEOUT}s" "${resources[@]}"
 	local name
-	for name in e2e-expired e2e-deleted e2e-enrolled e2e-deleted-ca e2e-deleted-updb; do
+	for name in e2e-expired e2e-deleted e2e-enrolled e2e-external e2e-by-id e2e-deleted-ca e2e-deleted-updb; do
 		expect_gone "identity ${name} is gone" identities "${name}"
 	done
 	expect_gone "edge router e2e-deleted-router is gone" edge-routers e2e-deleted-router
@@ -1077,7 +1117,9 @@ EOF
 	step "Updating the posture checks updates Ziti"
 	# The new values are again not in the form Ziti stores them in, so that the
 	# check for updates without a reason below is run on such values. The
-	# process checks also lose a fingerprint and their hashes.
+	# process check loses its fingerprint and keeps its hash. The Linux
+	# process of the multi process check loses its hashes, and a Windows
+	# process with a fingerprint takes the place of the macOS one.
 	local domain_updated mac_updated process_updated multi_updated
 	domain_updated='.domains == ["corp.example.com", "emea.example.com"] and (.roleAttributes | sort) == ["e2e", "managed-devices"]'
 	mac_updated='.macAddresses == ["001a2b3c4d5e", "0a1b2c3d4e60"] and .tags == {"env": "e2e"}'

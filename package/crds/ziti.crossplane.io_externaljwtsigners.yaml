@@ -132,9 +132,10 @@ spec:
                     minLength: 1
                     type: string
                   jwksEndpoint:
-                    description: JwksEndpoint is the URL of the JSON Web Key Set of
-                      the signer.
-                    pattern: ^https?://.+
+                    description: |-
+                      JwksEndpoint is the URL of the JSON Web Key Set of the signer. It must
+                      name a host, and its scheme must be http or https, in any case.
+                    pattern: ^[Hh][Tt][Tt][Pp][Ss]?://([^/?#@]*@)?(\[[0-9A-Fa-f:.]+\]|[^/?#@:\[\]]+)(:[0-9]*)?([/?#].*)?$
                     type: string
                   kid:
                     description: |-

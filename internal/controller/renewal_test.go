@@ -75,6 +75,9 @@ type renewalCase struct {
 	// ahead is how far the clock of the controller is ahead.
 	ahead time.Duration
 
+	// seed optionally stores the other entities the controller reports.
+	seed func(srv *fake.Server)
+
 	// want is the request that gives the entity a new enrollment token. It
 	// is empty if the entity is to be left alone.
 	want string
@@ -143,6 +146,9 @@ func (r renewal[T]) start(t *testing.T, tc renewalCase) (*fake.Server, managed.T
 	maps.Copy(created, tc.reported(time.Now()))
 	srv.Put(r.kind.Collection, created)
 	srv.SetClockAhead(tc.ahead)
+	if tc.seed != nil {
+		tc.seed(srv)
+	}
 	return srv, e, mg
 }
 
@@ -246,6 +252,35 @@ func identityRenewalCases(method string) map[string]renewalCase {
 	none := map[string]any{}
 	certificate := map[string]any{"cert": map[string]any{"id": "auth-1", "fingerprint": "abc"}}
 
+	// with adds fields to what reported returns.
+	with := func(reported func(time.Time) map[string]any, fields map[string]any) func(time.Time) map[string]any {
+		return func(now time.Time) map[string]any {
+			e := reported(now)
+			maps.Copy(e, fields)
+			return e
+		}
+	}
+	// policy is the default auth policy, which allows external JWTs, if at
+	// all, of the supplied signers or, if there are none, of every signer.
+	policy := func(allowed bool, signers []string) map[string]any {
+		return map[string]any{"id": "default", "name": "Default", "primary": map[string]any{
+			"extJwt": map[string]any{"allowed": allowed, "allowedSigners": signers},
+		}}
+	}
+	signer := func(id string, enabled, useExternalID bool) map[string]any {
+		return map[string]any{"id": id, "name": id, "enabled": enabled, "useExternalId": useExternalID}
+	}
+	// seed stores an auth policy and external JWT signers.
+	seed := func(policy map[string]any, signers ...map[string]any) func(*fake.Server) {
+		return func(srv *fake.Server) {
+			srv.Put("auth-policies", policy)
+			for _, s := range signers {
+				srv.Put("external-jwt-signers", s)
+			}
+		}
+	}
+	byID := signer("by-id", true, false)
+
 	return map[string]renewalCase{
 		"ExpiredAndNotEnrolled": {
 			reason:   "An identity that cannot enroll anymore gets a new token for its enrollment.",
@@ -289,6 +324,61 @@ func identityRenewalCases(method string) map[string]renewalCase {
 			reported: reported(none, nil),
 			ahead:    24 * time.Hour,
 			want:     createEnrollment,
+		},
+		"ExpiredWithAnExternalID": {
+			reason:   "An identity with an external ID can sign in with a JWT or a certificate that names it, for which Ziti reports no authenticator.",
+			reported: with(reported(none, in(-time.Hour)), map[string]any{"externalId": "sensor-7"}),
+		},
+		"MissingWithAnExternalID": {
+			reason:   "An identity with an external ID needs no enrollment.",
+			reported: with(reported(none, nil), map[string]any{"externalId": "sensor-7"}),
+		},
+		"ExpiredAndSignsInWithItsID": {
+			reason:   "An identity can sign in with a JWT that names its ID if its auth policy allows a signer that looks identities up by ID.",
+			reported: reported(none, in(-time.Hour)),
+			seed:     seed(policy(true, nil), signer("by-external-id", true, true), byID),
+		},
+		"MissingAndSignsInWithItsID": {
+			reason:   "An identity that can sign in with a JWT that names its ID needs no enrollment.",
+			reported: reported(none, nil),
+			seed:     seed(policy(true, nil), byID),
+		},
+		"SignsInWithItsIDUnderItsOwnPolicy": {
+			reason:   "What counts is the auth policy of the identity.",
+			reported: with(reported(none, in(-time.Hour)), map[string]any{"authPolicyId": "sso"}),
+			seed: func(srv *fake.Server) {
+				seed(policy(false, nil), byID)(srv)
+				srv.Put("auth-policies", map[string]any{"id": "sso", "name": "sso", "primary": map[string]any{"extJwt": map[string]any{"allowed": true}}})
+			},
+		},
+		"SignsInWithItsIDThroughAnAllowedSigner": {
+			reason:   "A policy that names signers allows those.",
+			reported: reported(none, in(-time.Hour)),
+			seed:     seed(policy(true, []string{"by-id"}), byID),
+		},
+		"SignerLooksUpExternalIDs": {
+			reason:   "A signer that looks identities up by their external ID does not find an identity that has none.",
+			reported: reported(none, in(-time.Hour)),
+			seed:     seed(policy(true, nil), signer("by-external-id", true, true)),
+			want:     refreshEnrollment,
+		},
+		"SignerDisabled": {
+			reason:   "Tokens of a signer that is disabled are refused.",
+			reported: reported(none, nil),
+			seed:     seed(policy(true, nil), signer("disabled", false, false)),
+			want:     createEnrollment,
+		},
+		"PolicyRefusesExternalJWTs": {
+			reason:   "An identity whose auth policy does not allow external JWTs cannot sign in with one.",
+			reported: reported(none, in(-time.Hour)),
+			seed:     seed(policy(false, nil), byID),
+			want:     refreshEnrollment,
+		},
+		"PolicyAllowsOtherSigners": {
+			reason:   "An identity cannot sign in with a JWT of a signer its auth policy does not name.",
+			reported: reported(none, in(-time.Hour)),
+			seed:     seed(policy(true, []string{"by-external-id", "gone"}), byID, signer("by-external-id", true, true)),
+			want:     refreshEnrollment,
 		},
 		"AuthenticatorsUnknown": {
 			reason: "Without the list of its authenticators there is no telling whether an identity has enrolled.",

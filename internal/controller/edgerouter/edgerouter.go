@@ -92,7 +92,7 @@ func connectionDetails(raw json.RawMessage) (managed.ConnectionDetails, error) {
 // Enrolling a router anew that has enrolled takes its certificate away and
 // disconnects it. Only a router of which Ziti says that it is not verified
 // and that has no certificate is taken not to have enrolled.
-func renewEnrollment(api *client.Client, _ *v1alpha1.EdgeRouter, raw json.RawMessage) (string, func(context.Context) error, error) {
+func renewEnrollment(_ context.Context, api *client.Client, _ *v1alpha1.EdgeRouter, raw json.RawMessage) (string, func(context.Context) error, error) {
 	var e struct {
 		ID                  string `json:"id"`
 		IsVerified          *bool  `json:"isVerified"`
