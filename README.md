@@ -84,7 +84,8 @@ How to read the table:
   error in its `Synced` condition and is retried. Two keys of
   `serviceHostingCosts` or `serviceHostingPrecedences` that name the same
   service, by its name and by its ID, must have the same value; otherwise
-  the resource reports them.
+  the resource reports the conflict in its `Synced` condition and nothing is
+  sent to Ziti.
 - **Certificate authorities.** A `CertificateAuthority` is ready when it
   exists in Ziti as declared, verified or not. The provider cannot verify it:
   that takes a certificate signed with the private key of the certificate

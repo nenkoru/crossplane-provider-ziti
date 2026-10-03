@@ -56,16 +56,16 @@ func stored(collection string, entity map[string]any) {
 }
 
 func storedPostureCheck(entity map[string]any) {
-	if macs, ok := stringSet(entity["macAddresses"], cleanMAC); ok {
+	if macs, ok := stringSet(entity["macAddresses"], cleanHex); ok {
 		entity["macAddresses"] = macs
 	}
 
 	if process, ok := entity["process"].(map[string]any); ok {
-		if hashes, ok := stringSet(process["hashes"], strings.ToLower); ok {
+		if hashes, ok := stringSet(process["hashes"], cleanHex); ok {
 			process["hashes"] = hashes
 		}
 		if fingerprint, ok := process["signerFingerprint"].(string); ok {
-			process["signerFingerprint"] = strings.ToLower(fingerprint)
+			process["signerFingerprint"] = cleanHex(fingerprint)
 		}
 	}
 
@@ -81,7 +81,7 @@ func storedPostureCheck(entity map[string]any) {
 	if processes, ok := entity["processes"].([]any); ok {
 		entity["processes"] = keyed(processes, func(p map[string]any) string {
 			for _, field := range []string{"hashes", "signerFingerprints"} {
-				if l, ok := stringSet(p[field], asIs); ok {
+				if l, ok := stringSet(p[field], cleanHex); ok {
 					p[field] = l
 				}
 			}
@@ -134,15 +134,16 @@ func stringSet(v any, rewrite func(string) string) ([]any, bool) {
 
 func asIs(s string) string { return s }
 
-// cleanMAC returns a MAC address the way the real controller stores it: in
-// lower case and without anything that is not a hexadecimal digit.
-func cleanMAC(mac string) string {
+// cleanHex returns a MAC address, a hash or a fingerprint the way the real
+// controller stores it: in lower case and without anything that is not a
+// hexadecimal digit.
+func cleanHex(s string) string {
 	return strings.Map(func(r rune) rune {
 		if (r >= '0' && r <= '9') || (r >= 'a' && r <= 'f') {
 			return r
 		}
 		return -1
-	}, strings.ToLower(mac))
+	}, strings.ToLower(s))
 }
 
 // references are the fields of policies and services that the real
