@@ -486,9 +486,16 @@ func (s *Server) patch(w http.ResponseWriter, r *http.Request, collection, id st
 		delete(fields, "encryptionRequired")
 	case "auth-policies":
 		delete(fields, "primary")
-	case "cas", "external-jwt-signers":
+	case "external-jwt-signers":
 		// Nor does a PATCH remove a setting: it ignores fields that are null.
 		maps.DeleteFunc(fields, func(_ string, v any) bool { return v == nil })
+	case "cas":
+		// Likewise, except for the external ID claim of a certificate
+		// authority, which a PATCH removes unless it sets one.
+		maps.DeleteFunc(fields, func(_ string, v any) bool { return v == nil })
+		if _, ok := fields["externalIdClaim"]; !ok {
+			delete(entity, "externalIdClaim")
+		}
 	}
 	maps.Copy(entity, fields)
 	writeData(w, http.StatusOK, map[string]any{})
