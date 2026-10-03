@@ -1,0 +1,146 @@
+# What bed.sh creates inside the virtual cluster: a throwaway OpenZiti
+# controller, translated from ziti-docker-compose.yml, and a pod that hosts
+# the provider and the end-to-end test. ZITI_VERSION is filled in by bed.sh.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ziti-edge-controller
+  namespace: default
+  labels: {app: ziti-edge-controller}
+spec:
+  replicas: 1
+  strategy: {type: Recreate}
+  selector:
+    matchLabels: {app: ziti-edge-controller}
+  template:
+    metadata:
+      labels: {app: ziti-edge-controller}
+    spec:
+      automountServiceAccountToken: false
+      enableServiceLinks: false
+      hostAliases:
+        - ip: 127.0.0.1
+          hostnames: [ziti-edge-controller]
+      containers:
+        - name: controller
+          image: openziti/quickstart:ZITI_VERSION
+          command: [/var/openziti/scripts/run-controller.sh]
+          env:
+            - {name: ZITI_CTRL_NAME, value: ziti-edge-controller}
+            - {name: ZITI_CTRL_EDGE_ADVERTISED_ADDRESS, value: ziti-edge-controller}
+            - {name: ZITI_CTRL_EDGE_ADVERTISED_PORT, value: "1280"}
+            - {name: ZITI_CTRL_EDGE_IP_OVERRIDE, value: 127.0.0.1}
+            - {name: ZITI_CTRL_ADVERTISED_PORT, value: "6262"}
+            - {name: ZITI_USER, value: admin}
+            - name: ZITI_PWD
+              valueFrom:
+                secretKeyRef: {name: ziti-admin, key: password}
+          ports:
+            - {name: edge, containerPort: 1280}
+          readinessProbe:
+            exec:
+              command: [curl, -m, "2", -s, -k, -f, "https://localhost:1280/edge/client/v1/version"]
+            periodSeconds: 3
+            failureThreshold: 60
+          resources:
+            requests: {cpu: 100m, memory: 256Mi, ephemeral-storage: 200Mi}
+            limits: {cpu: 500m, memory: 1Gi, ephemeral-storage: 2Gi}
+          volumeMounts:
+            - {name: data, mountPath: /persistent}
+      volumes:
+        # The state of the controller goes with its pod.
+        - name: data
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: ziti-edge-controller
+  namespace: default
+spec:
+  selector: {app: ziti-edge-controller}
+  ports:
+    - {name: edge, port: 1280, targetPort: edge}
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: e2e-runner
+  namespace: default
+---
+# The runner administers the virtual cluster, and nothing else: the host
+# cluster does not know this binding.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: e2e-runner
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: cluster-admin
+subjects:
+  - kind: ServiceAccount
+    name: e2e-runner
+    namespace: default
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: e2e-runner
+  namespace: default
+  labels: {app: e2e-runner}
+spec:
+  restartPolicy: Never
+  serviceAccountName: e2e-runner
+  enableServiceLinks: false
+  securityContext:
+    runAsUser: 1000
+    runAsGroup: 1000
+    fsGroup: 1000
+    runAsNonRoot: true
+    seccompProfile: {type: RuntimeDefault}
+  initContainers:
+    # The image of the runner has kubectl, helm, curl, jq and bash, and lacks
+    # openssl, which the test makes certificates with.
+    - name: openssl
+      image: alpine:3.22
+      command:
+        - sh
+        - -c
+        - apk add --no-cache openssl && cp /usr/bin/openssl /tools/ && cp /usr/lib/libssl.so.3 /usr/lib/libcrypto.so.3 /tools/
+      securityContext:
+        runAsUser: 0
+        runAsNonRoot: false
+        allowPrivilegeEscalation: false
+      resources:
+        requests: {cpu: 50m, memory: 64Mi, ephemeral-storage: 100Mi}
+        limits: {cpu: 250m, memory: 256Mi, ephemeral-storage: 500Mi}
+      volumeMounts:
+        - {name: tools, mountPath: /tools}
+  containers:
+    - name: runner
+      image: alpine/k8s:1.30.14
+      command: [sleep, infinity]
+      workingDir: /work
+      env:
+        - {name: HOME, value: /work}
+        - {name: PATH, value: "/tools:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"}
+        - {name: LD_LIBRARY_PATH, value: /tools}
+      securityContext:
+        allowPrivilegeEscalation: false
+        capabilities: {drop: [ALL]}
+      resources:
+        requests: {cpu: 200m, memory: 256Mi, ephemeral-storage: 500Mi}
+        limits: {cpu: 500m, memory: 768Mi, ephemeral-storage: 2Gi}
+      volumeMounts:
+        - {name: work, mountPath: /work}
+        - {name: tools, mountPath: /tools, readOnly: true}
+        - {name: ziti, mountPath: /secrets/ziti, readOnly: true}
+  volumes:
+    - name: work
+      emptyDir: {}
+    - name: tools
+      emptyDir: {}
+    - name: ziti
+      secret:
+        secretName: ziti-admin

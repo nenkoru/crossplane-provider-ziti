@@ -1,0 +1,51 @@
+# A namespace for the test bed in a cluster that is shared with other
+# workloads: a quota, defaults for containers that name no resources, and no
+# traffic from other namespaces. Optional; bed.sh needs only the namespace.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: provider-ziti-e2e
+---
+apiVersion: v1
+kind: ResourceQuota
+metadata:
+  name: provider-ziti-e2e
+  namespace: provider-ziti-e2e
+spec:
+  hard:
+    pods: "10"
+    requests.cpu: "2"
+    requests.memory: 4Gi
+    limits.cpu: "4"
+    limits.memory: 6Gi
+    persistentvolumeclaims: "0"
+    services.loadbalancers: "0"
+    services.nodeports: "0"
+---
+apiVersion: v1
+kind: LimitRange
+metadata:
+  name: provider-ziti-e2e
+  namespace: provider-ziti-e2e
+spec:
+  limits:
+    - type: Container
+      defaultRequest:
+        cpu: 50m
+        memory: 64Mi
+      default:
+        cpu: 250m
+        memory: 256Mi
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: same-namespace-only
+  namespace: provider-ziti-e2e
+spec:
+  podSelector: {}
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector: {}
