@@ -247,6 +247,8 @@ after cloning without `--recurse-submodules`.
 | `make test` | Runs the unit tests and the controller integration test, which starts a Kubernetes API server with envtest. |
 | `make reviewable` | Runs all of the above; do this before opening a pull request. |
 | `make e2e.ziti` | Runs the end-to-end test. Needs docker, kind, kubectl, helm, curl, jq and openssl. |
+| `make build` | Builds the provider, its image and the package `_output/xpkg/linux_<arch>/provider-ziti-<version>.xpkg`. On macOS add `PLATFORM=linux_arm64` or `PLATFORM=linux_amd64`. |
+| `make e2e.package` | Installs the package `make build` wrote through Crossplane and runs the `core` and `scenarios` stages of the end-to-end test on it. |
 
 The fuzz targets (`Fuzz...` in `internal/controller`, `generic` and
 `posturecheck`) run their seed corpora with the unit tests. To fuzz one,
@@ -277,18 +279,20 @@ How the code is organized:
 The end-to-end test starts an OpenZiti controller from
 `ziti-docker-compose.yml` and a kind cluster with Crossplane, runs the
 provider out-of-cluster, applies the examples and checks the result through
-the Ziti API. [Testing](docs/testing.md) says what it checks for every kind,
-how to run a part of it, and how to run it inside a virtual cluster of an
-existing Kubernetes cluster with [`test/e2e/vcluster`](test/e2e/vcluster).
+the Ziti API. `make e2e.package` runs a part of it on the package instead,
+installed through Crossplane. [Testing](docs/testing.md) says what it checks
+for every kind, how to run a part of it, and how to run it inside a virtual
+cluster of an existing Kubernetes cluster with
+[`test/e2e/vcluster`](test/e2e/vcluster).
 Never point it at a Ziti network you care about: it creates, changes and
 deletes entities.
 
 ## Roadmap
 
-1. Give the end-to-end suite its own CI job; the `unit-tests` job runs it for
-   now.
-2. Package and install the provider through Crossplane in the end-to-end test,
-   then publish a first release.
+1. Give the end-to-end suite and the test of the package CI jobs of their
+   own; the `unit-tests` and `publish-artifacts` jobs run them for now.
+2. Publish a first release. CI builds the package and tests it installed
+   through Crossplane; it is not published anywhere yet.
 
 ## License
 
