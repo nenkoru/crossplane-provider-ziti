@@ -51,6 +51,9 @@ type field struct {
 	Required    bool
 	Default     string
 	Description string
+	// ItemRules are the rules of an item of a list, which span its fields:
+	// the table of settings states them after the description of the list.
+	ItemRules string
 }
 
 func main() {
@@ -221,8 +224,8 @@ func renderSettings(b *bytes.Buffer, k kind, forProvider apiextensionsv1.JSONSch
 	t := &strings.Builder{}
 	t.WriteString("| Field | Field in Ziti | What it does in Ziti |\n|-------|---------------|----------------------|\n")
 	for _, f := range flatten(forProvider, "") {
-		fmt.Fprintf(b, "| `%s` | %s | %s | %s | %s |\n", f.Path, f.typ(), code(f.Default), k.inZiti(f.Path), cell(f.Description))
-		fmt.Fprintf(t, "| `%s` | %s | %s |\n", f.Path, k.inZiti(f.Path), cell(f.Description))
+		fmt.Fprintf(b, "| `%s` | %s | %s | %s | %s |\n", f.Path, f.typ(), code(f.Default), k.inZiti(f.Path), cell(f.Description+f.ItemRules))
+		fmt.Fprintf(t, "| `%s` | %s | %s |\n", f.Path, k.inZiti(f.Path), cell(f.Description+f.ItemRules))
 	}
 	if k.Constant != "" {
 		fmt.Fprintf(b, "\nThe provider also sends %s.\n", k.Constant)
@@ -332,6 +335,7 @@ func nested(f field, p apiextensionsv1.JSONSchemaProps) []field {
 		if len(p.Items.Schema.Enum) > 0 {
 			f.Description += " " + enum(p.Items.Schema.Enum)
 		}
+		f.ItemRules = itemRules(*p.Items.Schema)
 		return append([]field{f}, flatten(*p.Items.Schema, f.Path+"[].")...)
 	case p.Type == "object" && p.AdditionalProperties != nil && p.AdditionalProperties.Schema != nil:
 		f.Type = "map of " + p.AdditionalProperties.Schema.Type + "s"
@@ -340,6 +344,18 @@ func nested(f field, p apiextensionsv1.JSONSchemaProps) []field {
 		return append([]field{f}, flatten(p, f.Path+".")...)
 	}
 	return []field{f}
+}
+
+// itemRules returns the rules of an item of a list as sentences that follow
+// the description of the list.
+func itemRules(item apiextensionsv1.JSONSchemaProps) string {
+	rules := ""
+	for _, rule := range item.XValidations {
+		if rule.Message != "" {
+			rules += " Rule of an item: " + rule.Message + "."
+		}
+	}
+	return rules
 }
 
 // describe returns the description of a field with what its schema enforces.

@@ -22,14 +22,18 @@ import (
 )
 
 // ForwardAddressTranslation defines an address translation rule.
+// +kubebuilder:validation:XValidation:rule="isIP(self.from) && isIP(self.to) && ip(self.from).family() == ip(self.to).family()",message="from and to must be IP addresses of the same family"
+// +kubebuilder:validation:XValidation:rule="!isIP(self.from) || ip(self.from).family() == 6 || self.prefixLength <= 32",message="prefixLength must be at most 32 for IPv4"
 type ForwardAddressTranslation struct {
 	// From is the first address of the range clients ask for, as a single
 	// IPv4 or IPv6 address without a prefix length, such as 10.0.0.0. Ziti
 	// refuses CIDR notation here: prefixLength gives the size of the range.
+	// +kubebuilder:validation:MaxLength=45
 	From string `json:"from"`
 	// To is the first address of the range the hosting tunneler connects to
 	// instead, as a single address of the same family as from, such as
 	// 192.168.0.0.
+	// +kubebuilder:validation:MaxLength=45
 	To string `json:"to"`
 	// PrefixLength is the length of the prefix of from that is replaced by
 	// the prefix of to: the bits after it are kept. At most 32 for IPv4 and

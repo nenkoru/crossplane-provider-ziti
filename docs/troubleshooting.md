@@ -71,6 +71,7 @@ wrong. An answer of Ziti reads
 | `enrollmentDuration must be at least 5m` | A shorter token could expire before it is used. |
 | `exactly one of jwksEndpoint and certPem is required` | An external JWT signer verifies tokens with one or the other. |
 | `the SCHEME matcher is for the SAN_URI location`, `matcherCriteria is required ...`, `parserCriteria is required ...` | The parts of `externalIdClaim` of a certificate authority do not fit together. |
+| `from and to must be IP addresses of the same family`, `prefixLength must be at most 32 for IPv4` | An entry of `forwardAddressTranslations` of a `ConfigHostV1` or `ConfigHostV2` takes two IPv4 addresses with a prefix of at most 32 bits, or two IPv6 addresses with one of at most 128. CIDR notation and host names are not addresses. |
 | `Duplicate value` | An operating system type of a `PostureCheckOS`, or an operating system and path of a `PostureCheckMultiProcess`, is listed twice. Ziti keeps one entry for each. |
 | `Unsupported value`, `should be greater than or equal to`, `should match` | A value is not one of those the field allows; the page of the kind lists them. |
 | `unknown field` | The manifest has a field the kind does not have, usually a typo or a field at the wrong level. |

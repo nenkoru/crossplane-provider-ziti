@@ -98,6 +98,11 @@ go run ./cmd/provider --debug
 
 `make dev` does the same in a new kind cluster.
 
+The CRDs need Kubernetes 1.31 or later: the validation rules of
+`forwardAddressTranslations` use the IP address functions of CEL, which an
+older API server does not have, and it refuses the CRDs of `ConfigHostV1` and
+`ConfigHostV2`.
+
 ## Connecting to a Ziti controller
 
 Put the credentials of a Ziti administrator in a Secret and reference it from

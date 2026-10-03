@@ -1788,7 +1788,7 @@ test_scenarios() {
 # configure does for the test, and examples/composition needs Crossplane and
 # has a stage of its own.
 example_files() {
-	(cd "${ROOT}" && find examples -name '*.yaml' ! -path 'examples/provider/*' ! -path 'examples/composition/*' | LC_ALL=C sort)
+	(cd "${ROOT}" && find examples \( -name '*.yaml' -o -name '*.yml' \) ! -path 'examples/provider/*' ! -path 'examples/composition/*' | LC_ALL=C sort)
 }
 
 # test_examples applies every manifest of examples/ as it is in the
@@ -1801,12 +1801,12 @@ test_examples() {
 	local files=() f
 	while IFS= read -r f; do files+=("${f}"); done < <(example_files)
 	[ "${#files[@]}" -gt 0 ] || fail "no manifests in examples/"
-	for f in "${ROOT}"/examples/composition/*.yaml; do
+	while IFS= read -r f; do
 		case " ${COMPOSITION_EXAMPLES[*]} ${COMPOSITE_EXAMPLE} " in
-		*" examples/composition/${f##*/} "*) ;;
-		*) fail "examples/composition/${f##*/} is not applied by the composition stage" ;;
+		*" ${f} "*) ;;
+		*) fail "${f} is not applied by the composition stage" ;;
 		esac
-	done
+	done < <(cd "${ROOT}" && find examples/composition \( -name '*.yaml' -o -name '*.yml' \) | LC_ALL=C sort)
 	apply "${files[@]}"
 	for f in "${files[@]}"; do
 		kubectl wait --for=condition=Ready --timeout="${TIMEOUT}s" -f "${ROOT}/${f}" >/dev/null ||
