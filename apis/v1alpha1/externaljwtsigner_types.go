@@ -48,9 +48,10 @@ type ExternalJWTSignerParameters struct {
 	// +optional
 	Enabled bool `json:"enabled,omitempty"`
 
-	// JwksEndpoint is the URL of the JSON Web Key Set of the signer.
+	// JwksEndpoint is the URL of the JSON Web Key Set of the signer. It must
+	// name a host, and its scheme must be http or https, in any case.
 	// +optional
-	// +kubebuilder:validation:Pattern=`^https?://.+`
+	// +kubebuilder:validation:Pattern=`^[Hh][Tt][Tt][Pp][Ss]?://([^/?#@]*@)?(\[[0-9A-Fa-f:.]+\]|[^/?#@:\[\]]+)(:[0-9]*)?([/?#].*)?$`
 	JwksEndpoint *string `json:"jwksEndpoint,omitempty"`
 
 	// CertPem is the PEM encoded certificate that verifies the tokens of the
