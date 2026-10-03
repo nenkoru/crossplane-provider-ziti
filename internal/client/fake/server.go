@@ -68,7 +68,8 @@ var unchangeable = map[string][]string{
 }
 
 // Server is a fake Ziti controller. Entities are stored as the JSON documents
-// that were posted to it, plus an id and the time they were created.
+// that were posted to it, plus an id and the time they were created, in the
+// form the real controller stores them in, see stored.
 type Server struct {
 	*httptest.Server
 
@@ -81,22 +82,35 @@ type Server struct {
 	ahead       time.Duration
 	loseCreate  bool
 	failRenewal bool
+	faults      []Fault
 }
 
 // NewServer starts a fake Ziti controller serving TLS.
 func NewServer() *Server {
-	s := &Server{
-		collections: map[string]map[string]map[string]any{},
-		sessions:    map[string]bool{},
-	}
+	s := &Server{sessions: map[string]bool{}}
 	s.Server = httptest.NewUnstartedServer(http.HandlerFunc(s.handle))
 	s.TLS = &tls.Config{ClientAuth: tls.RequestClientCert, MinVersion: tls.VersionTLS12}
 	s.StartTLS()
+	s.Reset()
+	return s
+}
+
+// Reset removes every entity, fault and recorded request, and stores the
+// config types every controller has. API sessions stay valid, so that a
+// test that runs many times can reuse its server and clients.
+func (s *Server) Reset() {
+	s.mu.Lock()
+	s.collections = map[string]map[string]map[string]any{}
+	s.requests = nil
+	s.faults = nil
+	s.ahead = 0
+	s.loseCreate = false
+	s.failRenewal = false
+	s.mu.Unlock()
 
 	s.Put("config-types", map[string]any{"id": "host-v1-id", "name": "host.v1"})
 	s.Put("config-types", map[string]any{"id": "host-v2-id", "name": "host.v2"})
 	s.Put("config-types", map[string]any{"id": "intercept-v1-id", "name": "intercept.v1"})
-	return s
 }
 
 // CA returns the PEM-encoded certificate of the fake controller.
@@ -123,11 +137,17 @@ func (s *Server) put(collection string, entity map[string]any) {
 	s.collections[collection][fmt.Sprint(entity["id"])] = entity
 }
 
-// Delete removes an entity.
+// Delete removes an entity, along with the references to it that the real
+// controller removes, see dropReferences.
 func (s *Server) Delete(collection, id string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	s.delete(collection, id)
+}
+
+func (s *Server) delete(collection, id string) {
 	delete(s.collections[collection], id)
+	s.dropReferences(collection, id)
 }
 
 // Entity returns a copy of the stored entity, or nil if it does not exist.
@@ -135,6 +155,18 @@ func (s *Server) Entity(collection, id string) map[string]any {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return maps.Clone(s.collections[collection][id])
+}
+
+// Entities returns copies of the entities of a collection, in no particular
+// order.
+func (s *Server) Entities(collection string) []map[string]any {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	out := make([]map[string]any, 0, len(s.collections[collection]))
+	for _, e := range s.collections[collection] {
+		out = append(out, maps.Clone(e))
+	}
+	return out
 }
 
 // Len returns the number of entities in a collection.
@@ -196,6 +228,15 @@ func (s *Server) Requests() []string {
 }
 
 func (s *Server) handle(w http.ResponseWriter, r *http.Request) {
+	if f, ok := s.takeFault(r); ok {
+		s.fail(w, r, f)
+		return
+	}
+	s.serve(w, r)
+}
+
+// serve carries out a request.
+func (s *Server) serve(w http.ResponseWriter, r *http.Request) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -325,6 +366,7 @@ func (s *Server) create(w http.ResponseWriter, r *http.Request, collection strin
 		delete(entity, "tags")
 	}
 	setDefaults(collection, entity)
+	stored(collection, entity)
 
 	s.put(collection, entity)
 	if s.loseCreate {
@@ -498,6 +540,7 @@ func (s *Server) patch(w http.ResponseWriter, r *http.Request, collection, id st
 		}
 	}
 	maps.Copy(entity, fields)
+	stored(collection, entity)
 	writeData(w, http.StatusOK, map[string]any{})
 }
 
@@ -523,6 +566,7 @@ func (s *Server) replace(w http.ResponseWriter, r *http.Request, collection, id 
 		}
 	}
 	setDefaults(collection, entity)
+	stored(collection, entity)
 	s.put(collection, entity)
 	writeData(w, http.StatusOK, map[string]any{})
 }
@@ -539,7 +583,7 @@ func (s *Server) remove(w http.ResponseWriter, collection, id string) {
 		writeError(w, http.StatusNotFound, "NOT_FOUND", map[string]any{"field": "id", "type": "service", "value": missing})
 		return
 	}
-	delete(s.collections[collection], id)
+	s.delete(collection, id)
 	writeData(w, http.StatusOK, map[string]any{})
 }
 

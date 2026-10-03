@@ -19,6 +19,9 @@ package generic
 import (
 	"context"
 	"encoding/json"
+	"fmt"
+	"maps"
+	"slices"
 	"strings"
 	"time"
 
@@ -121,15 +124,20 @@ func ConfigType(ctx context.Context, api *client.Client, name string) (map[strin
 
 // ResolveKeys resolves the keys of a map, which are names or IDs of entities,
 // to IDs. A nil map is returned as an empty one, so that it is sent as {} and
-// clears the field.
-func ResolveKeys[V any](ctx context.Context, api *client.Client, collection string, byNameOrID map[string]V) (map[string]V, error) {
+// clears the field. Two keys that name the same entity, such as its name and
+// its ID, must have the same value: either could be meant otherwise.
+func ResolveKeys[V comparable](ctx context.Context, api *client.Client, collection string, byNameOrID map[string]V) (map[string]V, error) {
 	out := make(map[string]V, len(byNameOrID))
-	for n, v := range byNameOrID {
+	keys := make(map[string]string, len(byNameOrID))
+	for _, n := range slices.Sorted(maps.Keys(byNameOrID)) {
 		id, err := api.ResolveID(ctx, collection, n)
 		if err != nil {
 			return nil, err
 		}
-		out[id] = v
+		if other, ok := keys[id]; ok && out[id] != byNameOrID[n] {
+			return nil, fmt.Errorf("%q and %q name the same entity in %s, with different settings", other, n, collection)
+		}
+		out[id], keys[id] = byNameOrID[n], n
 	}
 	return out, nil
 }

@@ -72,13 +72,20 @@ How to read the table:
   Ziti directly is reverted. Optional settings that are left unset in the
   spec are not managed, except lists and maps (`tags`, and `appData`,
   `serviceHostingCosts` and `serviceHostingPrecedences` of an identity),
-  which are cleared when unset.
+  which are cleared when unset. Lists of strings at the top level of an
+  entity, such as roles and role attributes, are compared as sets, as Ziti
+  stores them: their order and duplicates do not matter. See
+  [What happens when someone edits Ziti directly](#what-happens-when-someone-edits-ziti-directly).
 - **References by name.** `Service.configs` takes config names or IDs, and so
   do `authPolicyId` and the keys of `serviceHostingCosts` and
   `serviceHostingPrecedences` of an identity, and `IdentityCA.ottca`. Policy
   roles take `#attribute`, `#all` or `@name`, where the name is resolved to an
   ID. A resource that refers to something that does not exist yet reports the
-  error in its `Synced` condition and is retried.
+  error in its `Synced` condition and is retried. Two keys of
+  `serviceHostingCosts` or `serviceHostingPrecedences` that name the same
+  service, by its name and by its ID, must have the same value; otherwise
+  the resource reports the conflict in its `Synced` condition and nothing is
+  sent to Ziti.
 - **Certificate authorities.** A `CertificateAuthority` is ready when it
   exists in Ziti as declared, verified or not. The provider cannot verify it:
   that takes a certificate signed with the private key of the certificate
@@ -219,76 +226,144 @@ spec:
 - `username`, `password`, `cert` and `key` can also be set inline in the spec.
   Anyone who can read the `ProviderConfig` can read them, so prefer the Secret.
 
-## Example
+## Quick start
 
-A service, an identity that may dial it and the token to enroll that identity:
+This walks through exposing a web service over Ziti with the manifests in
+[`examples/`](examples). The end-to-end test applies the same files to a
+real OpenZiti controller, and `go test ./apis/...` validates them against
+the CRDs.
 
-```yaml
-apiVersion: ziti.crossplane.io/v1alpha1
-kind: ConfigHostV1
-metadata:
-  name: web-host
-spec:
-  providerConfigRef:
-    kind: ProviderConfig
-    name: default
-  forProvider:
-    name: web-host
-    address: web.internal
-    port: 8080
-    protocol: tcp
----
-apiVersion: ziti.crossplane.io/v1alpha1
-kind: Service
-metadata:
-  name: web
-spec:
-  providerConfigRef:
-    kind: ProviderConfig
-    name: default
-  forProvider:
-    name: web
-    configs:
-      - web-host
----
-apiVersion: ziti.crossplane.io/v1alpha1
-kind: Identity
-metadata:
-  name: web-client
-spec:
-  providerConfigRef:
-    kind: ProviderConfig
-    name: default
-  writeConnectionSecretToRef:
-    name: web-client-enrollment
-  forProvider:
-    name: web-client
-    roleAttributes:
-      - web-clients
----
-apiVersion: ziti.crossplane.io/v1alpha1
-kind: ServicePolicy
-metadata:
-  name: web-dial
-spec:
-  providerConfigRef:
-    kind: ProviderConfig
-    name: default
-  forProvider:
-    name: web-dial
-    type: Dial
-    serviceRoles:
-      - "@web"
-    identityRoles:
-      - "#web-clients"
-```
+1. **Connect the provider to the controller.** Put the URL of the controller
+   and the credentials of a Ziti administrator into
+   [`examples/provider/config.yaml`](examples/provider/config.yaml), see
+   [Connecting to a Ziti controller](#connecting-to-a-ziti-controller), and
+   apply it:
 
-```shell
-kubectl get secret web-client-enrollment -o jsonpath='{.data.enrollmentToken}' | base64 -d > web-client.jwt
-```
+   ```shell
+   kubectl apply -f examples/provider/config.yaml
+   ```
 
-`providerConfigRef` defaults to the `ClusterProviderConfig` named `default`.
-More manifests, one directory per kind, are in [`examples/`](examples).
+2. **Describe the service.**
+   [`examples/service/service.yaml`](examples/service/service.yaml) has a
+   `ConfigHostV1` that tells the hosting identity where the service runs
+   (`web-service.local:8080`), a `ConfigInterceptV1` that tells clients which
+   addresses to intercept (`web.example.com` and `api.example.com`, ports 80
+   and 443), and the `Service`, which refers to both configs by name and has
+   the role attributes `role:web` and `role:api`.
+
+3. **Create the identities.**
+   [`examples/identity/identity.yaml`](examples/identity/identity.yaml) has
+   `web-client`, with the role attribute `web-clients`, and `web-server`,
+   which hosts the service. Each writes its one-time enrollment token to the
+   Secret named in `writeConnectionSecretToRef`.
+
+4. **Say who may do what.**
+   [`examples/servicepolicy/servicepolicy.yaml`](examples/servicepolicy/servicepolicy.yaml)
+   lets the identities with the attribute `web-clients` dial `@web-service`,
+   and `@web-server` bind the services with the attribute `role:web`.
+   [`examples/edgerouterpolicy/edgerouterpolicy.yaml`](examples/edgerouterpolicy/edgerouterpolicy.yaml)
+   lets both use the edge routers with the attribute `public`, and
+   [`examples/serviceedgerouterpolicy/serviceedgerouterpolicy.yaml`](examples/serviceedgerouterpolicy/serviceedgerouterpolicy.yaml)
+   makes the service available on them.
+   [`examples/edgerouter/edgerouter.yaml`](examples/edgerouter/edgerouter.yaml)
+   creates such a router, for a network that has none.
+
+   ```shell
+   kubectl apply -f examples/service/service.yaml \
+     -f examples/identity/identity.yaml \
+     -f examples/servicepolicy/servicepolicy.yaml \
+     -f examples/edgerouterpolicy/edgerouterpolicy.yaml \
+     -f examples/serviceedgerouterpolicy/serviceedgerouterpolicy.yaml
+   ```
+
+   The order does not matter: a resource that refers to something that does
+   not exist yet reports it and is retried.
+
+5. **Check the status.** Every kind is in the categories `managed` and
+   `ziti`. `kubectl get` shows the name of the entity in Ziti, its ID and
+   whether it is ready:
+
+   ```shell
+   kubectl get ziti
+   kubectl wait --for=condition=Ready --timeout=3m -f examples/service/service.yaml
+   ```
+
+   A resource is `Ready` when its entity exists in Ziti, and `Synced` when
+   the last reconcile succeeded: the entity was found as declared or was
+   updated to be. A `Synced` condition that is `False` has the error in its
+   message: a reference that does not exist yet, or what Ziti answered. `status.atProvider` shows the entity as Ziti
+   reports it, and the annotation `crossplane.io/external-name` holds its ID.
+
+   ```shell
+   kubectl get services.ziti.crossplane.io web-service -o jsonpath='{.status.conditions}'
+   kubectl describe identities.ziti.crossplane.io web-client
+   ```
+
+6. **Enroll the identities.** The token of `web-client` is in its Secret;
+   enroll the client with it, and `web-server` on the host that runs the web
+   server, with the token in `web-server-enrollment`:
+
+   ```shell
+   kubectl get secret web-client-enrollment -o jsonpath='{.data.enrollmentToken}' | base64 -d > web-client.jwt
+   ziti edge enroll web-client.jwt
+   ```
+
+7. **Clean up.** Deleting the managed resources deletes the entities in Ziti:
+
+   ```shell
+   kubectl delete -f examples/serviceedgerouterpolicy/serviceedgerouterpolicy.yaml \
+     -f examples/edgerouterpolicy/edgerouterpolicy.yaml \
+     -f examples/servicepolicy/servicepolicy.yaml \
+     -f examples/identity/identity.yaml \
+     -f examples/service/service.yaml
+   ```
+
+`providerConfigRef` defaults to the `ClusterProviderConfig` named `default`;
+the examples name the `ProviderConfig` of their namespace instead. More
+manifests, one directory per kind, are in [`examples/`](examples).
+
+## What happens when someone edits Ziti directly
+
+The provider compares every entity with its managed resource on every poll
+and puts it back as declared. The unit tests run the reconciler against a
+fake of the Ziti API that stores entities the way Ziti does, and the drift
+stage of the end-to-end test does the same against OpenZiti:
+
+- **A changed setting is reverted** with an update at the next poll, for
+  every field the spec manages: scalars, lists, roles and role attributes,
+  tags and other maps, and the data of configs. Lists of strings are
+  compared as sets; lists in the data of a config keep their order.
+- **What Ziti owns is left alone**: timestamps, links, whether an identity
+  or edge router has enrolled and a certificate authority is verified, and
+  the settings the spec leaves unset, with the exceptions listed under
+  **Drift** above.
+- **A deleted entity is created anew** at the next poll, under a new ID,
+  which the managed resource records in its external name. Ziti removes the
+  references to a deleted entity from policies (`@id` roles) and services
+  (configs); the resources that refer to it by name refer to the new ID
+  once it exists, and report the missing entity until then. An identity or
+  edge router created anew has a new enrollment token, which replaces the
+  old one in its connection Secret: whatever enrolled with the deleted
+  entity has to enroll again. Crossplane waits 30 seconds after it created
+  an entity before it creates one again that it does not find.
+- **An entity created by hand in its place is not taken over.** If someone
+  deletes the entity and creates another one with the same name, the
+  managed resource reports the name conflict Ziti answers, is not ready, and
+  leaves the other entity alone. Set its `crossplane.io/external-name`
+  annotation to the ID of that entity to adopt it, or delete the entity.
+- **Enrollments.** Once an identity or edge router has enrolled, Ziti no
+  longer reports its token, and the Secret keeps the last one. An
+  enrollment that is deleted or has expired is replaced as described under
+  **Renewal of enrollment tokens**.
+- **Deletion.** A managed resource whose entity is already gone is deleted
+  without an error. A deletion that Ziti refuses, because another entity
+  refers to the one being deleted, is reported and retried.
+- **Errors of Ziti or of the network**, such as answers with the status
+  500, 502, 503, 504, 408 or 429, closed connections and timeouts, are
+  reported in the `Synced` condition and retried. A managed resource that is
+  ready and synced after a reconcile has its entity as declared, and no
+  entity is lost or created twice: a creation that got no answer is settled
+  as described under **Creation with an unknown result**.
 
 ## Developing
 
@@ -302,6 +377,17 @@ after cloning without `--recurse-submodules`.
 | `make test` | Runs the unit tests and the controller integration test, which starts a Kubernetes API server with envtest. |
 | `make reviewable` | Runs all of the above; do this before opening a pull request. |
 | `make e2e.ziti` | Runs the end-to-end test. Needs docker, kind, kubectl, curl, jq and openssl. |
+
+The fuzz targets (`Fuzz...` in `internal/controller`, `generic` and
+`posturecheck`) run their seed corpora with the unit tests. To fuzz one,
+for example the reconciler of services:
+
+```shell
+go test -run '^$' -fuzz '^FuzzReconcileService$' -fuzztime 60s ./internal/controller
+```
+
+An input that fails is written to `testdata/fuzz` of the package; commit it
+along with the fix, so that it keeps running with the unit tests.
 
 How the code is organized:
 
@@ -320,8 +406,9 @@ The end-to-end test starts an OpenZiti controller from
 `ziti-docker-compose.yml` and a kind cluster, runs the provider
 out-of-cluster, applies the examples and checks the result through the Ziti
 API: the entities exist as declared, follow spec changes, are restored after
-being changed in Ziti directly, are not updated without a spec change, and
-are deleted with their managed resources. It also lets an enrollment expire,
+being changed in Ziti directly, are created anew after being deleted there,
+are not updated without a spec change, and are deleted with their managed
+resources. It also lets an enrollment expire,
 deletes others and enrolls an identity and an edge router, and checks that
 the tokens are replaced and that what has enrolled, or can sign in without
 an authenticator, is left alone. It starts
