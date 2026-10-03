@@ -20,6 +20,7 @@ import (
 	"context"
 	"net/http"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -102,7 +103,8 @@ func newHarness[T resource.ModernManaged](t testing.TB, srv *fake.Server, kind g
 	// entity again that it does not find, in case the API it talks to
 	// reports new entities late. Ziti does not, and the tests do not wait.
 	opts = append([]managed.ReconcilerOption{managed.WithCreationGracePeriod(0)}, opts...)
-	r, err := generic.NewReconciler(manager{client: k, scheme: scheme}, o, connecterFn(srv.Client), kind, opts...)
+	api := zitiClient(t, srv)
+	r, err := generic.NewReconciler(manager{client: k, scheme: scheme}, o, connecterFn(func() (*client.Client, error) { return api, nil }), kind, opts...)
 	if err != nil {
 		t.Fatalf("cannot build the reconciler: %v", err)
 	}
@@ -228,6 +230,22 @@ func ready(mg resource.Managed) bool {
 		mg.GetCondition(xpv2.TypeSynced).Status == corev1.ConditionTrue
 }
 
+// observe observes the managed resource without the faults injected into
+// the fake controller.
+func (h *harness[T]) observe(mg T) managed.ExternalObservation {
+	h.t.Helper()
+
+	faults := h.srv.ClearFaults()
+	defer h.srv.Inject(faults...)
+
+	//nolint:forcetypeassert // A deep copy has the type of the original.
+	o, err := generic.NewExternalClient(h.kind, zitiClient(h.t, h.srv)).Observe(context.Background(), mg.DeepCopyObject().(T))
+	if err != nil {
+		h.t.Fatalf("Observe(...): %v", err)
+	}
+	return o
+}
+
 // secret returns the connection secret of the managed resource, or nil if
 // there is none.
 func (h *harness[T]) secret(name string) map[string][]byte {
@@ -244,13 +262,27 @@ func (h *harness[T]) secret(name string) map[string][]byte {
 	return s.Data
 }
 
-// zitiClient returns a client of the fake controller.
+// clients holds a client per fake controller. Fuzz tests run thousands of
+// reconciles against one controller; a client per reconcile would use up
+// the local ports with connections that are closed and waiting.
+var (
+	clientsMu sync.Mutex
+	clients   = map[*fake.Server]*client.Client{}
+)
+
+// zitiClient returns the client of the fake controller.
 func zitiClient(t testing.TB, srv *fake.Server) *client.Client {
 	t.Helper()
 
+	clientsMu.Lock()
+	defer clientsMu.Unlock()
+	if api, ok := clients[srv]; ok {
+		return api
+	}
 	api, err := srv.Client()
 	if err != nil {
 		t.Fatalf("cannot create client: %v", err)
 	}
+	clients[srv] = api
 	return api
 }

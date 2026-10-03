@@ -87,18 +87,30 @@ type Server struct {
 
 // NewServer starts a fake Ziti controller serving TLS.
 func NewServer() *Server {
-	s := &Server{
-		collections: map[string]map[string]map[string]any{},
-		sessions:    map[string]bool{},
-	}
+	s := &Server{sessions: map[string]bool{}}
 	s.Server = httptest.NewUnstartedServer(http.HandlerFunc(s.handle))
 	s.TLS = &tls.Config{ClientAuth: tls.RequestClientCert, MinVersion: tls.VersionTLS12}
 	s.StartTLS()
+	s.Reset()
+	return s
+}
+
+// Reset removes every entity, fault and recorded request, and stores the
+// config types every controller has. API sessions stay valid, so that a
+// test that runs many times can reuse its server and clients.
+func (s *Server) Reset() {
+	s.mu.Lock()
+	s.collections = map[string]map[string]map[string]any{}
+	s.requests = nil
+	s.faults = nil
+	s.ahead = 0
+	s.loseCreate = false
+	s.failRenewal = false
+	s.mu.Unlock()
 
 	s.Put("config-types", map[string]any{"id": "host-v1-id", "name": "host.v1"})
 	s.Put("config-types", map[string]any{"id": "host-v2-id", "name": "host.v2"})
 	s.Put("config-types", map[string]any{"id": "intercept-v1-id", "name": "intercept.v1"})
-	return s
 }
 
 // CA returns the PEM-encoded certificate of the fake controller.
