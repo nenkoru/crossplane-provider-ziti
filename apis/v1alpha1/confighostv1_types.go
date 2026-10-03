@@ -23,13 +23,19 @@ import (
 
 // ForwardAddressTranslation defines an address translation rule.
 type ForwardAddressTranslation struct {
-	// From is the range of addresses clients ask for, in CIDR notation.
+	// From is the first address of the range clients ask for, as a single
+	// IPv4 or IPv6 address without a prefix length, such as 10.0.0.0. Ziti
+	// refuses CIDR notation here: prefixLength gives the size of the range.
 	From string `json:"from"`
-	// To is the range the hosting tunneler connects to instead, in CIDR
-	// notation.
+	// To is the first address of the range the hosting tunneler connects to
+	// instead, as a single address of the same family as from, such as
+	// 192.168.0.0.
 	To string `json:"to"`
-	// PrefixLength is the length of the prefix that is replaced: the bits
-	// after it are kept.
+	// PrefixLength is the length of the prefix of from that is replaced by
+	// the prefix of to: the bits after it are kept. At most 32 for IPv4 and
+	// 128 for IPv6.
+	// +kubebuilder:validation:Minimum=0
+	// +kubebuilder:validation:Maximum=128
 	PrefixLength int32 `json:"prefixLength"`
 }
 
@@ -221,7 +227,8 @@ type HostTerminator struct {
 	AllowedSourceAddresses []string `json:"allowedSourceAddresses,omitempty"`
 
 	// ForwardAddressTranslations move the address the client asked for into
-	// another range before the hosting tunneler connects.
+	// another range before the hosting tunneler connects. They apply when
+	// forwardAddress is true.
 	// +optional
 	ForwardAddressTranslations []ForwardAddressTranslation `json:"forwardAddressTranslations,omitempty"`
 

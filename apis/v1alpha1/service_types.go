@@ -31,8 +31,8 @@ const (
 	TerminatorStrategyWeighted TerminatorStrategy = "weighted"
 	// TerminatorStrategyRandom creates terminators randomly across edge routers.
 	TerminatorStrategyRandom TerminatorStrategy = "random"
-	// TerminatorStrategyHA creates terminators for high availability.
-	TerminatorStrategyHA TerminatorStrategy = "ha"
+	// TerminatorStrategySticky keeps a client on the terminator it got first.
+	TerminatorStrategySticky TerminatorStrategy = "sticky"
 )
 
 // ServiceSpec specifies the desired state of a Ziti Service.
@@ -66,10 +66,11 @@ type ServiceParameters struct {
 
 	// TerminatorStrategy says which of the terminators that host the service
 	// gets a new connection: smartrouting takes the one with the cheapest
-	// route, weighted and random spread the connections, ha keeps to one and
-	// fails over to the others.
+	// route, weighted and random spread the connections, sticky chooses like
+	// smartrouting and keeps a client on the terminator it got first while
+	// that terminator is available.
 	// +optional
-	// +kubebuilder:validation:Enum=smartrouting;weighted;random;ha
+	// +kubebuilder:validation:Enum=smartrouting;weighted;random;sticky
 	TerminatorStrategy *TerminatorStrategy `json:"terminatorStrategy,omitempty"`
 
 	// Configs are the names or IDs of the configs of the service, one per

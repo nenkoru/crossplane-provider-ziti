@@ -1,13 +1,13 @@
 apiVersion: ziti.crossplane.io/v1alpha1
 kind: Service
 metadata:
-  name: service-ha
+  name: service-sticky
   namespace: default
 spec:
   forProvider:
     encryptionRequired: true
-    name: service-ha
-    terminatorStrategy: ha
+    name: service-sticky
+    terminatorStrategy: sticky
   managementPolicies:
     - '*'
   providerConfigRef:

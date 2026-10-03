@@ -43,7 +43,7 @@ spec:
     - "*"
 ```
 
-More manifests of the kind: [`examples/scenarios/configs.yaml`](../../examples/scenarios/configs.yaml), [`examples/scenarios/publish-service.yaml`](../../examples/scenarios/publish-service.yaml), [`examples/service/advanced.yaml`](../../examples/service/advanced.yaml), [`examples/service/ha.yaml`](../../examples/service/ha.yaml), [`examples/service/hostv2.yaml`](../../examples/service/hostv2.yaml), [`examples/service/minimal.yaml`](../../examples/service/minimal.yaml).
+More manifests of the kind: [`examples/scenarios/configs.yaml`](../../examples/scenarios/configs.yaml), [`examples/scenarios/publish-service.yaml`](../../examples/scenarios/publish-service.yaml), [`examples/service/advanced.yaml`](../../examples/service/advanced.yaml), [`examples/service/hostv2.yaml`](../../examples/service/hostv2.yaml), [`examples/service/minimal.yaml`](../../examples/service/minimal.yaml), [`examples/service/sticky.yaml`](../../examples/service/sticky.yaml).
 
 ## Settings: `spec.forProvider`
 
@@ -55,7 +55,7 @@ More manifests of the kind: [`examples/scenarios/configs.yaml`](../../examples/s
 | `maxIdleTimeMillis` | integer |  | `maxIdleTimeMillis` | MaxIdleTimeMillis closes a circuit of the service that carried no traffic for so many milliseconds. Zero keeps idle circuits open. |
 | `roleAttributes` | list of strings |  | `roleAttributes` | RoleAttributes are the attributes policies select the service by, as "#attribute". |
 | `tags` | map of strings |  | `tags` | Tags are free-form labels Ziti stores with the service. They do not affect access or routing. |
-| `terminatorStrategy` | string |  | `terminatorStrategy` | TerminatorStrategy says which of the terminators that host the service gets a new connection: smartrouting takes the one with the cheapest route, weighted and random spread the connections, ha keeps to one and fails over to the others. One of `smartrouting`, `weighted`, `random`, `ha`. |
+| `terminatorStrategy` | string |  | `terminatorStrategy` | TerminatorStrategy says which of the terminators that host the service gets a new connection: smartrouting takes the one with the cheapest route, weighted and random spread the connections, sticky chooses like smartrouting and keeps a client on the terminator it got first while that terminator is available. One of `smartrouting`, `weighted`, `random`, `sticky`. |
 
 The settings every managed resource has, such as `spec.providerConfigRef`,
 `spec.managementPolicies` and `spec.writeConnectionSecretToRef`, are described
