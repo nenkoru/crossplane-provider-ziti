@@ -24,6 +24,7 @@ import (
 	"github.com/crossplane/crossplane-runtime/v2/pkg/meta"
 	kerrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/types"
 	kube "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/envtest"
 
@@ -349,14 +350,22 @@ func TestPostureCheckSchemas(t *testing.T) {
 		v1alpha1.MultiProcess{OsType: "Linux", Path: "/usr/bin/agent", Hashes: []v1alpha1.HexString{"FFEE01"}},
 		v1alpha1.MultiProcess{OsType: "macOS", Path: "/usr/bin/agent", SignerFingerprints: []v1alpha1.HexString{"A9:09:50:2D"}},
 	)
+	agent := process("agent", v1alpha1.Process{OsType: "Windows", Path: `C:\agent.exe`, Hashes: []v1alpha1.HexString{"FFEE01"}, SignerFingerprint: "A9 09 50 2D"})
 	create(ctx, t, k,
 		domain("corporate", "corp.example.com"),
 		mac("registered", "00:1A:2B:3C:4D:5E", "0a-1b-2c-3d-4e-5f", "001a.2b3c.4d5e", "001a2b3c4d5e"),
-		process("agent", v1alpha1.Process{OsType: "Windows", Path: `C:\agent.exe`, Hashes: []v1alpha1.HexString{"FFEE01"}, SignerFingerprint: "A9 09 50 2D"}),
+		agent,
 		agents,
 	)
 	if got := agents.Spec.ForProvider.Semantic; got != "AllOf" {
 		t.Errorf("semantic of a multi process check that names none: want AllOf, got %q", got)
+	}
+
+	// The fingerprint of a process is optional, and an empty one is what
+	// clears it.
+	unsign := kube.RawPatch(types.MergePatchType, []byte(`{"spec": {"forProvider": {"process": {"signerFingerprint": ""}}}}`))
+	if err := k.Patch(ctx, agent, unsign); err != nil {
+		t.Errorf("setting the fingerprint of a process check to an empty one: %v", err)
 	}
 
 	for reason, o := range map[string]kube.Object{
@@ -366,6 +375,10 @@ func TestPostureCheckSchemas(t *testing.T) {
 		"a process of an unknown operating system":         process("invalid", v1alpha1.Process{OsType: "linux", Path: "/usr/bin/agent"}),
 		"a hash with a prefix":                             process("invalid", v1alpha1.Process{OsType: "Linux", Path: "/usr/bin/agent", Hashes: []v1alpha1.HexString{"sha512:ffee01"}}),
 		"a fingerprint that is not hexadecimal":            process("invalid", v1alpha1.Process{OsType: "Linux", Path: "/usr/bin/agent", SignerFingerprint: "unsigned"}),
+		"an empty MAC address":                             mac("invalid", "00:1A:2B:3C:4D:5E", ""),
+		"an empty hash":                                    process("invalid", v1alpha1.Process{OsType: "Linux", Path: "/usr/bin/agent", Hashes: []v1alpha1.HexString{""}}),
+		"an empty hash of a multi process check":           multi("invalid", "AnyOf", v1alpha1.MultiProcess{OsType: "Linux", Path: "/usr/bin/agent", Hashes: []v1alpha1.HexString{""}}),
+		"an empty fingerprint of a multi process check":    multi("invalid", "AnyOf", v1alpha1.MultiProcess{OsType: "Linux", Path: "/usr/bin/agent", SignerFingerprints: []v1alpha1.HexString{""}}),
 		"a multi process check without processes":          multi("invalid", "AnyOf"),
 		"a multi process check with an unknown semantic":   multi("invalid", "anyOf", v1alpha1.MultiProcess{OsType: "Linux", Path: "/usr/bin/agent"}),
 		"a multi process check that names a process twice": multi("invalid", "AnyOf", v1alpha1.MultiProcess{OsType: "Linux", Path: "/usr/bin/agent"}, v1alpha1.MultiProcess{OsType: "Linux", Path: "/usr/bin/agent"}),

@@ -1117,7 +1117,9 @@ EOF
 	step "Updating the posture checks updates Ziti"
 	# The new values are again not in the form Ziti stores them in, so that the
 	# check for updates without a reason below is run on such values. The
-	# process checks also lose a fingerprint and their hashes.
+	# process check loses its fingerprint and keeps its hash. The Linux
+	# process of the multi process check loses its hashes, and a Windows
+	# process with a fingerprint takes the place of the macOS one.
 	local domain_updated mac_updated process_updated multi_updated
 	domain_updated='.domains == ["corp.example.com", "emea.example.com"] and (.roleAttributes | sort) == ["e2e", "managed-devices"]'
 	mac_updated='.macAddresses == ["001a2b3c4d5e", "0a1b2c3d4e60"] and .tags == {"env": "e2e"}'

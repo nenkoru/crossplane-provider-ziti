@@ -13,6 +13,11 @@ import (
 // +kubebuilder:validation:Pattern=`^[0-9A-Fa-f]+([ :.-][0-9A-Fa-f]+)*$`
 type HexString string
 
+// OptionalHexString is a HexString of a field that may be left out. It may
+// also be empty, which is the same and clears the value in Ziti.
+// +kubebuilder:validation:Pattern=`^([0-9A-Fa-f]+([ :.-][0-9A-Fa-f]+)*)?$`
+type OptionalHexString string
+
 // PostureCheckMacSpec defines the desired state of a PostureCheckMac.
 type PostureCheckMacSpec struct {
 	xpv2.ManagedResourceSpec `json:",inline"`

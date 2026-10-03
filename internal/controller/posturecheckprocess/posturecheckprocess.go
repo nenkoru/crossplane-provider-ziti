@@ -53,7 +53,7 @@ func desired(_ context.Context, _ *client.Client, mg *v1alpha1.PostureCheckProce
 			"osType":            p.Process.OsType,
 			"path":              p.Process.Path,
 			"hashes":            posturecheck.HexSet(p.Process.Hashes),
-			"signerFingerprint": posturecheck.Hex(p.Process.SignerFingerprint),
+			"signerFingerprint": posturecheck.Hex(v1alpha1.HexString(p.Process.SignerFingerprint)),
 		},
 		"tags": generic.Tags(p.Tags),
 	}, nil

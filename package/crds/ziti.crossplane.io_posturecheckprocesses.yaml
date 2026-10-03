@@ -101,7 +101,7 @@ spec:
                         description: |-
                           SignerFingerprint is the SHA-1 fingerprint of the certificate the
                           executable must be signed with.
-                        pattern: ^[0-9A-Fa-f]+([ :.-][0-9A-Fa-f]+)*$
+                        pattern: ^([0-9A-Fa-f]+([ :.-][0-9A-Fa-f]+)*)?$
                         type: string
                     required:
                     - osType
