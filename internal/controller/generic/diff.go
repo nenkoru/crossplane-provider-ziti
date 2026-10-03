@@ -46,8 +46,9 @@ func normalize(body map[string]any) (map[string]any, error) {
 //   - an absent value, null, false, zero, an empty string, an empty list and
 //     an empty object are all considered equal, as Ziti leaves empty values
 //     out of its responses;
-//   - a top-level list of strings is compared as a set, as Ziti does not
-//     preserve the order of roles and attributes.
+//   - a top-level list of strings is compared as a set: Ziti stores roles,
+//     attributes and the other lists of strings of an entity as sets, which
+//     keep neither the order of their items nor duplicates.
 func firstDifference(desired, observed map[string]any) (string, bool) {
 	for _, field := range slices.Sorted(maps.Keys(desired)) {
 		d, o := desired[field], observed[field]
@@ -66,8 +67,8 @@ func firstDifference(desired, observed map[string]any) (string, bool) {
 	return "", false
 }
 
-// stringSet returns the sorted elements of a list of strings. Null is an
-// empty list.
+// stringSet returns the elements of a list of strings sorted and without
+// duplicates. Null is an empty list.
 func stringSet(v any) ([]string, bool) {
 	if v == nil {
 		return []string{}, true
@@ -87,7 +88,7 @@ func stringSet(v any) ([]string, bool) {
 		out = append(out, s)
 	}
 	slices.Sort(out)
-	return out, true
+	return slices.Compact(out), true
 }
 
 func equal(d, o any) bool {
