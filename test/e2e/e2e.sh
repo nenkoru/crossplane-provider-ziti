@@ -18,7 +18,7 @@
 #
 # E2E_ONLY runs some stages of the test instead of all of them, for example
 # E2E_ONLY="lifecycle scenarios". The stages are core, drift, extended,
-# posture_checks, authentication, renewal, lifecycle, scenarios and
+# posture_checks, authentication, renewal, lifecycle, scenarios, examples and
 # composition.
 #
 # "test" alone runs the checks against a provider that is already running:
@@ -1666,6 +1666,54 @@ test_scenarios() {
 	expect_gone "service edge router policy is gone" service-edge-router-policies databases-site-a
 }
 
+# example_files prints every manifest of examples/ that is a resource of the
+# provider. examples/provider connects the provider to a controller, which
+# configure does for the test, and examples/composition needs Crossplane and
+# has a stage of its own.
+example_files() {
+	(cd "${ROOT}" && find examples -name '*.yaml' ! -path 'examples/provider/*' ! -path 'examples/composition/*' | LC_ALL=C sort)
+}
+
+# test_examples applies every manifest of examples/ as it is in the
+# repository, all at once, and checks that each resource becomes ready: Ziti
+# refuses values the CRDs accept, and only a controller tells. The other
+# stages apply most of the manifests too, but each names its own; this one
+# takes whatever is in the directory, so that no example goes untested.
+test_examples() {
+	step "Applying every example"
+	local files=() f
+	while IFS= read -r f; do files+=("${f}"); done < <(example_files)
+	[ "${#files[@]}" -gt 0 ] || fail "no manifests in examples/"
+	for f in "${ROOT}"/examples/composition/*.yaml; do
+		case " ${COMPOSITION_EXAMPLES[*]} ${COMPOSITE_EXAMPLE} " in
+		*" examples/composition/${f##*/} "*) ;;
+		*) fail "examples/composition/${f##*/} is not applied by the composition stage" ;;
+		esac
+	done
+	apply "${files[@]}"
+	for f in "${files[@]}"; do
+		kubectl wait --for=condition=Ready --timeout="${TIMEOUT}s" -f "${ROOT}/${f}" >/dev/null ||
+			fail "${f}: not every resource became ready"
+		ok "${f}: ready"
+	done
+
+	step "Ziti stores what only it validates"
+	check_entity services service-sticky services '.terminatorStrategy == "sticky"'
+	check_entity services advanced-service services '.terminatorStrategy == "weighted" and (.configs | length) == 2'
+	check_entity confighostv1s advanced-host configs \
+		'.data.forwardAddress == true and .data.forwardAddressTranslations == [{"from": "10.1.0.0", "to": "192.168.0.0", "prefixLength": 16}]'
+	check_entity services minimal-service services '(.configs | length) == 1'
+
+	step "Deleting the examples"
+	delete "${files[@]}"
+	for name in service-sticky advanced-service minimal-service; do
+		expect_gone "service ${name} is gone" services "${name}"
+	done
+	for name in advanced-host advanced-intercept minimal-host; do
+		expect_gone "config ${name} is gone" configs "${name}"
+	done
+}
+
 # test_composition has Crossplane compose the resources of the provider from
 # the composite resource of examples/composition.
 test_composition() {
@@ -1761,6 +1809,7 @@ run_tests() {
 		test_renewal
 		test_lifecycle
 		test_scenarios
+		test_examples
 		if has_crossplane; then
 			test_composition
 		else

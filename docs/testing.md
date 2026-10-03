@@ -56,6 +56,7 @@ no example.
 | `renewal` | An enrollment token that expired is replaced, an enrollment that was deleted is created anew for every method and for an edge router, a new token can be used to enroll, and what has enrolled or can sign in without an authenticator is left alone. |
 | `lifecycle` | A resource of every kind at once: drift, deletion in Ziti in one sweep, references that follow the new IDs (service to configs, policies to service and identity, auth policy to signer, identity to certificate authority), new enrollment tokens for the identities and the edge router created anew. |
 | `scenarios` | The manifests of [`examples/scenarios`](../examples/scenarios) applied together: the client and the tunneler have access to the service, the service is available on the edge router, and the configs are stored as written. |
+| `examples` | Every manifest under [`examples/`](../examples) but `provider/` and `composition/`, applied as it is in the repository and all at once: each resource becomes ready, and Ziti stores the `sticky` terminator strategy and the address translations as written. The stage takes whatever is in the directory, so an example cannot go untested. |
 | `composition` | With Crossplane: the `PublishedService` of [`examples/composition`](../examples/composition) is composed into six entities, follows a change, gets its service back after a deletion in Ziti, and takes its entities with it when deleted. |
 
 No stage prints an enrollment token, a password or a session token: tokens
