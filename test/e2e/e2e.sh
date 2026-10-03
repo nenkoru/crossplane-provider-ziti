@@ -29,6 +29,14 @@
 # The Composition of examples/composition is tested when Crossplane is
 # installed in the cluster. "up" installs it if E2E_CROSSPLANE is true.
 #
+# E2E_PACKAGE names a package file that "make build" wrote, such as
+# _output/xpkg/linux_amd64/provider-ziti-v0.1.0.xpkg. "up" then installs
+# Crossplane, pushes the package to a registry it starts next to the cluster
+# and installs it with a Provider, the way a user does, instead of running the
+# provider out-of-cluster. The test also checks that the pod of the provider
+# does not restart. E2E_CROSSPLANE_CLI is the Crossplane CLI that pushes the
+# package.
+#
 # Requires docker (with compose), kind, kubectl, go, curl, jq and openssl, and
 # helm to install Crossplane.
 
@@ -59,6 +67,19 @@ SETTLE="${E2E_SETTLE:-35}"
 
 # The Crossplane release "crossplane" installs.
 CROSSPLANE_VERSION="${CROSSPLANE_VERSION:-2.4.2}"
+
+# The package "up" installs through Crossplane, and what that needs: a
+# registry on the network of the kind cluster, published on a port of the
+# host to push to.
+PACKAGE="${E2E_PACKAGE:-}"
+CROSSPLANE_CLI="${E2E_CROSSPLANE_CLI:-crossplane}"
+REGISTRY="${CLUSTER}-registry"
+REGISTRY_PORT="${E2E_REGISTRY_PORT:-5001}"
+PROVIDER="provider-ziti"
+PROVIDER_PODS="pkg.crossplane.io/provider=${PROVIDER}"
+# A provider that cannot read CRDs exits two minutes after it started. A pod
+# that has run for this many seconds without a restart is past that.
+PACKAGE_UPTIME="${E2E_PACKAGE_UPTIME:-150}"
 
 GROUP="ziti.crossplane.io"
 
@@ -423,6 +444,11 @@ has_crossplane() {
 	kubectl get crd compositions.apiextensions.crossplane.io >/dev/null 2>&1
 }
 
+# packaged succeeds if Crossplane runs the provider from a package.
+packaged() {
+	kubectl get provider.pkg.crossplane.io "${PROVIDER}" >/dev/null 2>&1
+}
+
 # ------------------------------------------------------------------------------
 # Commands
 
@@ -430,6 +456,9 @@ crossplane() {
 	step "Installing Crossplane ${CROSSPLANE_VERSION}"
 	helm upgrade --install crossplane crossplane --repo https://charts.crossplane.io/stable \
 		--version "${CROSSPLANE_VERSION}" --namespace crossplane-system --create-namespace --wait --timeout 300s
+	# Crossplane grants a provider it installed from a package access to its
+	# kinds itself.
+	[ -z "${PACKAGE}" ] || return 0
 	# Crossplane grants itself access to the kinds of the providers it
 	# installs. The provider under test runs outside the cluster, so the test
 	# grants the access.
@@ -447,8 +476,74 @@ rules:
 EOF
 }
 
+# install_package pushes the package to a registry on the network of the
+# cluster and installs it with a Provider. The registry speaks plain HTTP:
+# Crossplane uses that for a registry at a private address, and containerd,
+# which pulls the image of the provider from the same package, is told to.
+install_package() {
+	[ -f "${PACKAGE}" ] || fail "the package ${PACKAGE} does not exist, build it with make build"
+
+	step "Starting a registry for the package"
+	docker rm -f "${REGISTRY}" >/dev/null 2>&1 || true
+	docker run -d --name "${REGISTRY}" --network kind -p "127.0.0.1:${REGISTRY_PORT}:5000" registry:2 >/dev/null
+	local address node
+	address="$(docker inspect -f '{{(index .NetworkSettings.Networks "kind").IPAddress}}' "${REGISTRY}"):5000"
+	for node in $(kind get nodes --name "${CLUSTER}"); do
+		docker exec "${node}" mkdir -p "/etc/containerd/certs.d/${address}"
+		docker exec -i "${node}" sh -c "cat >/etc/containerd/certs.d/${address}/hosts.toml" <<EOF
+[host."http://${address}"]
+EOF
+	done
+	local deadline=$((SECONDS + 60))
+	until curl -s --fail -m 2 "http://localhost:${REGISTRY_PORT}/v2/" >/dev/null 2>&1; do
+		[ "${SECONDS}" -lt "${deadline}" ] || fail "the registry did not come up at localhost:${REGISTRY_PORT}"
+		sleep 1
+	done
+	# "command" because crossplane is also a function of this script.
+	command "${CROSSPLANE_CLI}" xpkg push -f "${PACKAGE}" "localhost:${REGISTRY_PORT}/${PROVIDER}:e2e"
+	ok "pushed ${PACKAGE##*/} to ${address}/${PROVIDER}:e2e"
+
+	step "Installing the package through Crossplane"
+	kubectl apply -f - <<EOF
+apiVersion: pkg.crossplane.io/v1beta1
+kind: DeploymentRuntimeConfig
+metadata:
+  name: ${PROVIDER}-e2e
+spec:
+  deploymentTemplate:
+    spec:
+      selector: {}
+      template:
+        spec:
+          containers:
+            - name: package-runtime
+              args: ["--debug", "--poll=${POLL}"]
+---
+apiVersion: pkg.crossplane.io/v1
+kind: Provider
+metadata:
+  name: ${PROVIDER}
+spec:
+  package: ${address}/${PROVIDER}:e2e
+  runtimeConfigRef:
+    name: ${PROVIDER}-e2e
+EOF
+	kubectl wait "provider.pkg.crossplane.io/${PROVIDER}" --for=condition=Healthy --timeout=300s
+	kubectl -n crossplane-system wait pod -l "${PROVIDER_PODS}" --for=condition=Ready --timeout=120s
+	ok "the provider runs in $(kubectl -n crossplane-system get pod -l "${PROVIDER_PODS}" -o name)"
+
+	# The provider reaches the Ziti controller over the network of the cluster,
+	# not through the port published on the host.
+	local controller
+	controller="$(docker compose -p "${COMPOSE_PROJECT}" -f "${COMPOSE_FILE}" ps -q ziti-controller)"
+	docker network connect kind "${controller}"
+	echo "https://$(docker inspect -f '{{(index .NetworkSettings.Networks "kind").IPAddress}}' "${controller}"):1280" >"${WORK}/provider-ziti-url"
+	ok "the provider reaches the Ziti controller at $(cat "${WORK}/provider-ziti-url")"
+}
+
 up() {
 	mkdir -p "${WORK}"
+	rm -f "${WORK}/provider-ziti-url"
 
 	step "Starting OpenZiti from ${COMPOSE_FILE##*/}"
 	docker compose -p "${COMPOSE_PROJECT}" -f "${COMPOSE_FILE}" up -d ziti-controller
@@ -460,7 +555,23 @@ up() {
 	ok "Ziti controller $(curl -sk "${ZITI_URL}/edge/client/v1/version" | jq -r '.data.version') answers at ${ZITI_URL}"
 
 	step "Creating kind cluster ${CLUSTER}"
-	kind create cluster --name "${CLUSTER}" --kubeconfig "${KUBECONFIG}" --wait 120s
+	# containerd reads /etc/containerd/certs.d, where install_package says how
+	# to reach the registry of the package.
+	kind create cluster --name "${CLUSTER}" --kubeconfig "${KUBECONFIG}" --wait 120s --config - <<EOF
+kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+containerdConfigPatches:
+  - |-
+    [plugins."io.containerd.grpc.v1.cri".registry]
+      config_path = "/etc/containerd/certs.d"
+EOF
+
+	if [ -n "${PACKAGE}" ]; then
+		# Crossplane installs the CRDs and starts the provider.
+		crossplane
+		install_package
+		return
+	fi
 
 	step "Installing CRDs"
 	kubectl apply -f "${ROOT}/package/crds"
@@ -484,6 +595,12 @@ up() {
 
 configure() {
 	step "Configuring the provider"
+	# A provider in the cluster reaches the Ziti controller at another address
+	# than the test does, see install_package.
+	local host="${ZITI_URL}"
+	if [ -f "${WORK}/provider-ziti-url" ]; then
+		host="$(cat "${WORK}/provider-ziti-url")"
+	fi
 	kubectl apply -f - <<EOF
 apiVersion: v1
 kind: Secret
@@ -501,7 +618,7 @@ metadata:
   name: default
   namespace: default
 spec:
-  host: "${ZITI_URL}"
+  host: "${host}"
   # The quickstart controller has a throwaway private PKI.
   insecureSkipTLSVerify: true
   credentials:
@@ -1741,6 +1858,25 @@ test_composition() {
 	eventually "service edge router policy is gone" ziti_gone service-edge-router-policies wiki-routers
 }
 
+# test_package checks that the provider Crossplane installed from the package
+# keeps running. Crossplane reports a provider as healthy while its pod
+# restarts every two minutes, so the test looks at the pod.
+test_package() {
+	step "Checking the pod of the provider"
+	local pod started left
+	pod="$(kubectl -n crossplane-system get pod -l "${PROVIDER_PODS}" -o json)"
+	expect "one pod runs the provider" "$(jq '.items | length' <<<"${pod}")" 1
+	started="$(jq -r '.items[0].status.containerStatuses[0].state.running.startedAt // empty' <<<"${pod}")"
+	[ -n "${started}" ] || fail "the provider is not running: $(jq -c '.items[0].status.containerStatuses[0].state' <<<"${pod}")"
+	left=$((PACKAGE_UPTIME - ($(date +%s) - $(jq -n --arg t "${started}" '$t | fromdate'))))
+	if [ "${left}" -gt 0 ]; then
+		sleep "${left}"
+	fi
+	pod="$(kubectl -n crossplane-system get pod -l "${PROVIDER_PODS}" -o json)"
+	expect "the provider has not restarted in ${PACKAGE_UPTIME} seconds" \
+		"$(jq -c '[.items[].status.containerStatuses[] | {ready, restartCount}]' <<<"${pod}")" '[{"ready":true,"restartCount":0}]'
+}
+
 run_tests() {
 	ziti_login
 	configure
@@ -1749,6 +1885,9 @@ run_tests() {
 		for stage in ${E2E_ONLY}; do
 			"test_${stage}"
 		done
+		if packaged; then
+			test_package
+		fi
 		step "The end-to-end checks of ${E2E_ONLY} passed"
 		return
 	fi
@@ -1767,6 +1906,9 @@ run_tests() {
 			step "Skipping the Composition: Crossplane is not installed"
 		fi
 	fi
+	if packaged; then
+		test_package
+	fi
 	step "All end-to-end checks passed"
 }
 
@@ -1778,7 +1920,13 @@ logs() {
 		jq -r '.items[] | select(([.status.conditions[]? | select(.type == "Ready" and .status == "True")] | length) == 0)
 			| "\(.kind)/\(.metadata.name): " + ([.status.conditions[]? | "\(.type)=\(.status) \(.reason) \(.message // "")"] | join("; "))' || true
 	step "Provider log (last 200 lines)"
-	tail -n 200 "${WORK}/provider.log" 2>/dev/null | redact || true
+	if packaged; then
+		kubectl get providers.pkg.crossplane.io,providerrevisions.pkg.crossplane.io -o wide 2>&1 || true
+		kubectl -n crossplane-system get pod -l "${PROVIDER_PODS}" -o wide 2>&1 || true
+		kubectl -n crossplane-system logs -l "${PROVIDER_PODS}" --tail 200 2>&1 | redact || true
+	else
+		tail -n 200 "${WORK}/provider.log" 2>/dev/null | redact || true
+	fi
 	step "Ziti controller log (last 50 lines)"
 	# Only "up" starts the controller with docker.
 	if command -v docker >/dev/null 2>&1; then
@@ -1791,6 +1939,7 @@ down() {
 		kill "$(cat "${WORK}/provider.pid")" 2>/dev/null || true
 		rm -f "${WORK}/provider.pid"
 	fi
+	docker rm -f "${REGISTRY}" >/dev/null 2>&1 || true
 	kind delete cluster --name "${CLUSTER}" || true
 	docker compose -p "${COMPOSE_PROJECT}" -f "${COMPOSE_FILE}" down -v || true
 }

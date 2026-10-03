@@ -78,6 +78,7 @@ openssl:
 
 ```shell
 make e2e.ziti                       # everything, with Crossplane
+make build && make e2e.package      # the package, installed through Crossplane
 test/e2e/e2e.sh up                  # or step by step: OpenZiti, kind, the provider
 E2E_ONLY="lifecycle" test/e2e/e2e.sh test
 test/e2e/e2e.sh logs
@@ -93,6 +94,20 @@ test/e2e/e2e.sh down
 | `E2E_SKIP_EXTENDED` | `false` | Run only `core` and `drift`. |
 | `E2E_TIMEOUT` | `180` | Seconds to wait for the provider to converge. |
 | `E2E_POLL` | `10s` | How often the provider looks for drift. |
+| `E2E_PACKAGE` | none, the package of `make build` in `make e2e.package` | A package file. `up` installs it through Crossplane instead of running the provider out-of-cluster. |
+| `E2E_PACKAGE_STAGES` | `core scenarios` | The stages `make e2e.package` runs. |
+| `E2E_PACKAGE_UPTIME` | `150` | Seconds the pod of the provider must have run without a restart. |
+| `E2E_REGISTRY_PORT` | `5001` | The port of the host for the registry of the package. |
+| `E2E_CROSSPLANE_CLI` | `crossplane` | The Crossplane CLI that pushes the package. |
+
+`make e2e.package` tests what a user installs. It starts a registry on the
+network of the kind cluster, pushes the package there, installs it with a
+`Provider` and runs stages of the test against the provider that Crossplane
+started. The provider gets no access but what Crossplane grants it. At the
+end the test checks that the pod of the provider has run for two and a half
+minutes without a restart: Crossplane reports a provider as healthy even
+while its pod restarts, and a provider that may not read CRDs exits after two
+minutes.
 
 In an existing Kubernetes cluster, without installing anything into it
 directly: [`test/e2e/vcluster`](../test/e2e/vcluster/README.md) runs the same
@@ -110,4 +125,6 @@ and deletes entities.
 
 Every pull request runs the generators and fails on a difference
 (`check-diff`), the linter, the unit tests, the build of the package, and the
-end-to-end test in kind against OpenZiti 2.0.6.
+end-to-end test in kind against OpenZiti 2.0.6. The `publish-artifacts`
+job builds the package, then installs it through Crossplane and runs the
+`core` and `scenarios` stages on it.

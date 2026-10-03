@@ -26,6 +26,10 @@ GOLANGCILINT_VERSION = 2.12.2
 # ====================================================================================
 # Setup Kubernetes tools
 
+# The package is built by the Crossplane CLI. A CLI of the 1.x line drops
+# spec.capabilities from package/crossplane.yaml, and without the safe-start
+# capability Crossplane 2.x does not let the provider read CRDs.
+CROSSPLANE_CLI_VERSION = v2.5.0
 -include build/makelib/k8s_tools.mk
 
 # ====================================================================================
@@ -74,6 +78,22 @@ e2e.ziti:
 	@$(INFO) running end-to-end tests against OpenZiti
 	@E2E_CROSSPLANE=true $(ROOT_DIR)/test/e2e/e2e.sh all || $(FAIL)
 	@$(OK) end-to-end tests passed
+
+# Run stages of the end-to-end test against the package "make build" wrote,
+# installed through Crossplane from a registry the way a user installs it.
+E2E_PACKAGE ?= $(XPKG_OUTPUT_DIR)/linux_$(SAFEHOSTARCH)/provider-ziti-$(VERSION).xpkg
+E2E_PACKAGE_STAGES ?= core scenarios
+e2e.package: $(CROSSPLANE_CLI)
+	@$(INFO) running end-to-end tests against the package installed through Crossplane
+	@E2E_PACKAGE=$(E2E_PACKAGE) E2E_CROSSPLANE_CLI=$(CROSSPLANE_CLI) E2E_ONLY="$(E2E_PACKAGE_STAGES)" E2E_WORK_DIR=$(WORK_DIR)/e2e-package $(ROOT_DIR)/test/e2e/e2e.sh all || $(FAIL)
+	@$(OK) end-to-end tests of the package passed
+
+# Until ci.yml gets a job of its own for the test of the package, the
+# publish-artifacts job runs it once the package is built, before it uploads
+# anything.
+ifeq ($(GITHUB_JOB),publish-artifacts)
+build.done: e2e.package
+endif
 
 # Until ci.yml gets a job of its own for the end-to-end test, the unit-tests
 # job runs it once the unit tests have passed.
@@ -125,7 +145,7 @@ dev-clean: $(KIND) $(KUBECTL)
 	@$(INFO) Deleting kind cluster
 	@$(KIND) delete cluster --name=$(PROJECT_NAME)-dev
 
-.PHONY: submodules fallthrough test-integration e2e.ziti run dev dev-clean
+.PHONY: submodules fallthrough test-integration e2e.ziti e2e.package run dev dev-clean
 
 # ====================================================================================
 # Special Targets
