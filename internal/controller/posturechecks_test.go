@@ -30,15 +30,15 @@ import (
 
 	xpv2 "github.com/crossplane/crossplane/apis/v2/core/v2"
 
-	"github.com/crossplane/provider-ziti/apis"
-	"github.com/crossplane/provider-ziti/apis/v1alpha1"
-	"github.com/crossplane/provider-ziti/internal/client/fake"
-	"github.com/crossplane/provider-ziti/internal/controller/generic"
-	"github.com/crossplane/provider-ziti/internal/controller/posturecheckdomain"
-	"github.com/crossplane/provider-ziti/internal/controller/posturecheckmac"
-	"github.com/crossplane/provider-ziti/internal/controller/posturecheckmultiprocess"
-	"github.com/crossplane/provider-ziti/internal/controller/posturecheckos"
-	"github.com/crossplane/provider-ziti/internal/controller/posturecheckprocess"
+	"github.com/nenkoru/crossplane-provider-ziti/apis"
+	"github.com/nenkoru/crossplane-provider-ziti/apis/v1alpha1"
+	"github.com/nenkoru/crossplane-provider-ziti/internal/client/fake"
+	"github.com/nenkoru/crossplane-provider-ziti/internal/controller/generic"
+	"github.com/nenkoru/crossplane-provider-ziti/internal/controller/posturecheckdomain"
+	"github.com/nenkoru/crossplane-provider-ziti/internal/controller/posturecheckmac"
+	"github.com/nenkoru/crossplane-provider-ziti/internal/controller/posturecheckmultiprocess"
+	"github.com/nenkoru/crossplane-provider-ziti/internal/controller/posturecheckos"
+	"github.com/nenkoru/crossplane-provider-ziti/internal/controller/posturecheckprocess"
 )
 
 // The specs below give lists out of order and with duplicates, and

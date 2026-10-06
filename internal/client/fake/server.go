@@ -31,7 +31,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/crossplane/provider-ziti/internal/client"
+	"github.com/nenkoru/crossplane-provider-ziti/internal/client"
 )
 
 const (

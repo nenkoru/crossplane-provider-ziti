@@ -31,7 +31,7 @@ import (
 	celconfig "k8s.io/apiserver/pkg/apis/cel"
 	"sigs.k8s.io/yaml"
 
-	"github.com/crossplane/provider-ziti/apis/v1alpha1"
+	"github.com/nenkoru/crossplane-provider-ziti/apis/v1alpha1"
 )
 
 // TestExpectedStatusOfHTTPChecks checks the bounds of the expected status of

@@ -23,9 +23,9 @@ import (
 	"context"
 	"encoding/json"
 
-	"github.com/crossplane/provider-ziti/apis/v1alpha1"
-	"github.com/crossplane/provider-ziti/internal/client"
-	"github.com/crossplane/provider-ziti/internal/controller/generic"
+	"github.com/nenkoru/crossplane-provider-ziti/apis/v1alpha1"
+	"github.com/nenkoru/crossplane-provider-ziti/internal/client"
+	"github.com/nenkoru/crossplane-provider-ziti/internal/controller/generic"
 )
 
 // Kind describes how a ServiceEdgeRouterPolicy maps to the Ziti API.

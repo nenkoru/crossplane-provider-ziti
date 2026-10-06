@@ -34,8 +34,8 @@ import (
 	utilyaml "k8s.io/apimachinery/pkg/util/yaml"
 	"sigs.k8s.io/yaml"
 
-	"github.com/crossplane/provider-ziti/apis"
-	"github.com/crossplane/provider-ziti/apis/v1alpha1"
+	"github.com/nenkoru/crossplane-provider-ziti/apis"
+	"github.com/nenkoru/crossplane-provider-ziti/apis/v1alpha1"
 )
 
 const (

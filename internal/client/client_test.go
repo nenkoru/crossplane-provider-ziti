@@ -32,8 +32,8 @@ import (
 
 	"github.com/google/go-cmp/cmp"
 
-	"github.com/crossplane/provider-ziti/internal/client"
-	"github.com/crossplane/provider-ziti/internal/client/fake"
+	"github.com/nenkoru/crossplane-provider-ziti/internal/client"
+	"github.com/nenkoru/crossplane-provider-ziti/internal/client/fake"
 )
 
 func newClient(t *testing.T, srv *fake.Server) *client.Client {

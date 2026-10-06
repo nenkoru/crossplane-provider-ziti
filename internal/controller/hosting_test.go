@@ -21,9 +21,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/crossplane/provider-ziti/apis/v1alpha1"
-	"github.com/crossplane/provider-ziti/internal/client/fake"
-	"github.com/crossplane/provider-ziti/internal/controller/identity"
+	"github.com/nenkoru/crossplane-provider-ziti/apis/v1alpha1"
+	"github.com/nenkoru/crossplane-provider-ziti/internal/client/fake"
+	"github.com/nenkoru/crossplane-provider-ziti/internal/controller/identity"
 )
 
 // TestHostingSettingsNameAServiceTwice gives an identity hosting settings

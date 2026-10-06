@@ -33,19 +33,19 @@ import (
 
 	xpv2 "github.com/crossplane/crossplane/apis/v2/core/v2"
 
-	"github.com/crossplane/provider-ziti/apis/v1alpha1"
-	"github.com/crossplane/provider-ziti/internal/client"
-	"github.com/crossplane/provider-ziti/internal/client/fake"
-	"github.com/crossplane/provider-ziti/internal/controller/configinterceptv1"
-	"github.com/crossplane/provider-ziti/internal/controller/edgerouter"
-	"github.com/crossplane/provider-ziti/internal/controller/edgerouterpolicy"
-	"github.com/crossplane/provider-ziti/internal/controller/externaljwtsigner"
-	"github.com/crossplane/provider-ziti/internal/controller/generic"
-	"github.com/crossplane/provider-ziti/internal/controller/identity"
-	"github.com/crossplane/provider-ziti/internal/controller/identityca"
-	"github.com/crossplane/provider-ziti/internal/controller/service"
-	"github.com/crossplane/provider-ziti/internal/controller/serviceedgerouterpolicy"
-	"github.com/crossplane/provider-ziti/internal/controller/servicepolicy"
+	"github.com/nenkoru/crossplane-provider-ziti/apis/v1alpha1"
+	"github.com/nenkoru/crossplane-provider-ziti/internal/client"
+	"github.com/nenkoru/crossplane-provider-ziti/internal/client/fake"
+	"github.com/nenkoru/crossplane-provider-ziti/internal/controller/configinterceptv1"
+	"github.com/nenkoru/crossplane-provider-ziti/internal/controller/edgerouter"
+	"github.com/nenkoru/crossplane-provider-ziti/internal/controller/edgerouterpolicy"
+	"github.com/nenkoru/crossplane-provider-ziti/internal/controller/externaljwtsigner"
+	"github.com/nenkoru/crossplane-provider-ziti/internal/controller/generic"
+	"github.com/nenkoru/crossplane-provider-ziti/internal/controller/identity"
+	"github.com/nenkoru/crossplane-provider-ziti/internal/controller/identityca"
+	"github.com/nenkoru/crossplane-provider-ziti/internal/controller/service"
+	"github.com/nenkoru/crossplane-provider-ziti/internal/controller/serviceedgerouterpolicy"
+	"github.com/nenkoru/crossplane-provider-ziti/internal/controller/servicepolicy"
 )
 
 // TestMissingReferences gives every reference of the kinds that refer to

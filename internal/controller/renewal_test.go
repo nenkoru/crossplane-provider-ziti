@@ -34,15 +34,15 @@ import (
 	kube "sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/envtest"
 
-	"github.com/crossplane/provider-ziti/apis"
-	"github.com/crossplane/provider-ziti/apis/v1alpha1"
-	"github.com/crossplane/provider-ziti/internal/client/fake"
-	"github.com/crossplane/provider-ziti/internal/controller/edgerouter"
-	"github.com/crossplane/provider-ziti/internal/controller/generic"
-	"github.com/crossplane/provider-ziti/internal/controller/identity"
-	"github.com/crossplane/provider-ziti/internal/controller/identityca"
-	"github.com/crossplane/provider-ziti/internal/controller/identitynone"
-	"github.com/crossplane/provider-ziti/internal/controller/identityupdb"
+	"github.com/nenkoru/crossplane-provider-ziti/apis"
+	"github.com/nenkoru/crossplane-provider-ziti/apis/v1alpha1"
+	"github.com/nenkoru/crossplane-provider-ziti/internal/client/fake"
+	"github.com/nenkoru/crossplane-provider-ziti/internal/controller/edgerouter"
+	"github.com/nenkoru/crossplane-provider-ziti/internal/controller/generic"
+	"github.com/nenkoru/crossplane-provider-ziti/internal/controller/identity"
+	"github.com/nenkoru/crossplane-provider-ziti/internal/controller/identityca"
+	"github.com/nenkoru/crossplane-provider-ziti/internal/controller/identitynone"
+	"github.com/nenkoru/crossplane-provider-ziti/internal/controller/identityupdb"
 )
 
 const (
