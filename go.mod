@@ -1,4 +1,4 @@
-module github.com/crossplane/provider-ziti
+module github.com/nenkoru/crossplane-provider-ziti
 
 go 1.25.14
 

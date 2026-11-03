@@ -22,7 +22,7 @@ import (
 
 	"github.com/google/go-cmp/cmp"
 
-	"github.com/crossplane/provider-ziti/internal/client/fake"
+	"github.com/nenkoru/crossplane-provider-ziti/internal/client/fake"
 )
 
 // TestPatchCertificateAuthority checks that a PATCH of a certificate

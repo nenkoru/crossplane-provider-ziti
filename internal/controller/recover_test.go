@@ -26,11 +26,11 @@ import (
 	"github.com/crossplane/crossplane-runtime/v2/pkg/test"
 	kube "sigs.k8s.io/controller-runtime/pkg/client"
 
-	"github.com/crossplane/provider-ziti/apis/v1alpha1"
-	"github.com/crossplane/provider-ziti/internal/client"
-	"github.com/crossplane/provider-ziti/internal/client/fake"
-	"github.com/crossplane/provider-ziti/internal/controller/generic"
-	"github.com/crossplane/provider-ziti/internal/controller/service"
+	"github.com/nenkoru/crossplane-provider-ziti/apis/v1alpha1"
+	"github.com/nenkoru/crossplane-provider-ziti/internal/client"
+	"github.com/nenkoru/crossplane-provider-ziti/internal/client/fake"
+	"github.com/nenkoru/crossplane-provider-ziti/internal/controller/generic"
+	"github.com/nenkoru/crossplane-provider-ziti/internal/controller/service"
 )
 
 // connecterFn connects every managed resource to the same Ziti controller.

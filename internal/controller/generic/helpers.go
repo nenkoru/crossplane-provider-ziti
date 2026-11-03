@@ -25,7 +25,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/crossplane/provider-ziti/internal/client"
+	"github.com/nenkoru/crossplane-provider-ziti/internal/client"
 )
 
 // Unmarshal replaces the supplied observation with the Ziti entity.

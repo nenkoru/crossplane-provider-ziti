@@ -26,9 +26,9 @@ import (
 
 	"github.com/crossplane/crossplane-runtime/v2/pkg/reconciler/managed"
 
-	"github.com/crossplane/provider-ziti/apis/v1alpha1"
-	"github.com/crossplane/provider-ziti/internal/client"
-	"github.com/crossplane/provider-ziti/internal/controller/generic"
+	"github.com/nenkoru/crossplane-provider-ziti/apis/v1alpha1"
+	"github.com/nenkoru/crossplane-provider-ziti/internal/client"
+	"github.com/nenkoru/crossplane-provider-ziti/internal/controller/generic"
 )
 
 // ConnectionKeyEnrollmentToken is the connection secret key that holds the

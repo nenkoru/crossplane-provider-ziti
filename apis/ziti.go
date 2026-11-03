@@ -20,7 +20,7 @@ package apis
 import (
 	"k8s.io/apimachinery/pkg/runtime"
 
-	zitiv1alpha1 "github.com/crossplane/provider-ziti/apis/v1alpha1"
+	zitiv1alpha1 "github.com/nenkoru/crossplane-provider-ziti/apis/v1alpha1"
 )
 
 func init() {

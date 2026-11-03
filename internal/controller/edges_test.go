@@ -32,13 +32,13 @@ import (
 
 	xpv2 "github.com/crossplane/crossplane/apis/v2/core/v2"
 
-	"github.com/crossplane/provider-ziti/apis/v1alpha1"
-	"github.com/crossplane/provider-ziti/internal/client/fake"
-	"github.com/crossplane/provider-ziti/internal/controller/confighostv1"
-	"github.com/crossplane/provider-ziti/internal/controller/generic"
-	"github.com/crossplane/provider-ziti/internal/controller/identity"
-	"github.com/crossplane/provider-ziti/internal/controller/service"
-	"github.com/crossplane/provider-ziti/internal/controller/servicepolicy"
+	"github.com/nenkoru/crossplane-provider-ziti/apis/v1alpha1"
+	"github.com/nenkoru/crossplane-provider-ziti/internal/client/fake"
+	"github.com/nenkoru/crossplane-provider-ziti/internal/controller/confighostv1"
+	"github.com/nenkoru/crossplane-provider-ziti/internal/controller/generic"
+	"github.com/nenkoru/crossplane-provider-ziti/internal/controller/identity"
+	"github.com/nenkoru/crossplane-provider-ziti/internal/controller/service"
+	"github.com/nenkoru/crossplane-provider-ziti/internal/controller/servicepolicy"
 )
 
 func newService() *v1alpha1.Service {

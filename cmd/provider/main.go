@@ -46,9 +46,9 @@ import (
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 
-	"github.com/crossplane/provider-ziti/apis"
-	ziti "github.com/crossplane/provider-ziti/internal/controller"
-	"github.com/crossplane/provider-ziti/internal/version"
+	"github.com/nenkoru/crossplane-provider-ziti/apis"
+	ziti "github.com/nenkoru/crossplane-provider-ziti/internal/controller"
+	"github.com/nenkoru/crossplane-provider-ziti/internal/version"
 )
 
 func main() {

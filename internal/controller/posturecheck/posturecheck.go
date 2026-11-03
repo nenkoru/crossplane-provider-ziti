@@ -29,7 +29,7 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/crossplane/provider-ziti/apis/v1alpha1"
+	"github.com/nenkoru/crossplane-provider-ziti/apis/v1alpha1"
 )
 
 // Collection of the Ziti Edge Management API all posture checks are stored in.

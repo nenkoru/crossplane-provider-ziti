@@ -1,7 +1,7 @@
 # ====================================================================================
 # Setup Project
 PROJECT_NAME := provider-ziti
-PROJECT_REPO := github.com/crossplane/$(PROJECT_NAME)
+PROJECT_REPO := github.com/nenkoru/crossplane-provider-ziti
 
 PLATFORMS ?= linux_amd64 linux_arm64
 -include build/makelib/common.mk
@@ -41,12 +41,29 @@ IMAGES = provider-ziti
 # ====================================================================================
 # Setup XPKG
 
-XPKG_REG_ORGS ?= xpkg.upbound.io/crossplane
+# RUSL-378: the package registry and organisation must be chosen explicitly.
+# The template default pointed at the `crossplane` organisation, which is not
+# ours; a stray `make publish` must fail instead of pushing there. To publish,
+# pass the registry on the command line, for example:
+#   make publish XPKG_REG_ORGS=ghcr.io/nenkoru
+XPKG_REG_ORGS ?=
 # NOTE(hasheddan): skip promoting on xpkg.upbound.io as channel tags are
 # inferred.
-XPKG_REG_ORGS_NO_PROMOTE ?= xpkg.upbound.io/crossplane
+XPKG_REG_ORGS_NO_PROMOTE ?= $(XPKG_REG_ORGS)
 XPKGS = provider-ziti
 -include build/makelib/xpkg.mk
+
+# Refuse to publish before a registry and organisation are chosen, rather than
+# silently publishing nowhere or to a template default.
+publish: check.xpkg.registry
+
+check.xpkg.registry:
+	@if [ -z "$(strip $(XPKG_REG_ORGS))" ]; then \
+		echo "ERROR: XPKG_REG_ORGS is not set — refusing to publish the package."; \
+		echo "Set the registry and organisation explicitly, for example:"; \
+		echo "  make publish XPKG_REG_ORGS=ghcr.io/nenkoru"; \
+		exit 1; \
+	fi
 
 # NOTE(hasheddan): we force image building to happen prior to xpkg build so that
 # we ensure image is present in daemon.
@@ -145,7 +162,7 @@ dev-clean: $(KIND) $(KUBECTL)
 	@$(INFO) Deleting kind cluster
 	@$(KIND) delete cluster --name=$(PROJECT_NAME)-dev
 
-.PHONY: submodules fallthrough test-integration e2e.ziti e2e.package run dev dev-clean
+.PHONY: submodules fallthrough test-integration e2e.ziti e2e.package run dev dev-clean check.xpkg.registry
 
 # ====================================================================================
 # Special Targets

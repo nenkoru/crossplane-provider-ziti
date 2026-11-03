@@ -22,7 +22,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/crossplane/provider-ziti/apis/v1alpha1"
+	"github.com/nenkoru/crossplane-provider-ziti/apis/v1alpha1"
 )
 
 // nonHex is what the Ziti controller removes from a MAC address after it

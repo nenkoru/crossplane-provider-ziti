@@ -112,7 +112,7 @@ formatters:
       simplify: true
     goimports:
       local-prefixes:
-        - github.com/crossplane/provider-ziti
+        - github.com/nenkoru/crossplane-provider-ziti
   exclusions:
     generated: lax
     paths:
